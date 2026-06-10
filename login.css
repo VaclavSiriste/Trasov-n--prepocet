@@ -1,0 +1,129 @@
+:root {
+  --bg: #0b1220;
+  --bg-card: #121c2e;
+  --border: #243044;
+  --text: #e8eef8;
+  --text-muted: #94a3b8;
+  --accent: #3b82f6;
+  --accent-glow: rgba(59, 130, 246, 0.25);
+  --success: #34d399;
+  --error: #f87171;
+  --radius: 12px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.login-card {
+  width: min(100%, 440px);
+  padding: 2rem 1.75rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  border-top: 4px solid var(--accent);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.login-kicker {
+  margin: 0 0 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.login-card h1 {
+  margin: 0 0 0.5rem;
+  font-size: 1.5rem;
+}
+
+.login-lead {
+  margin: 0 0 1.25rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.login-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.login-form label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.login-form input {
+  font: inherit;
+  color: var(--text);
+  background: rgba(6, 20, 40, 0.65);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+}
+
+.login-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.login-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.login-hint--dev {
+  color: var(--accent);
+}
+
+.login-success {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--success);
+}
+
+.login-error {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--error);
+}
+
+.btn {
+  font: inherit;
+  border: none;
+  border-radius: 8px;
+  padding: 0.7rem 1rem;
+  cursor: pointer;
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+
+.btn--ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}

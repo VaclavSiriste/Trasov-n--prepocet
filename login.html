@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Přihlášení – Trasování</title>
+    <link rel="stylesheet" href="/login.css" />
+  </head>
+  <body class="login-page">
+    <section class="login-card">
+      <p class="login-kicker">Trasování</p>
+      <h1>Přihlášení</h1>
+      <p class="login-lead">Přihlaste se firemním e-mailem. Kód a odkaz přijdou na váš e-mail.</p>
+
+      <form id="form-email" class="login-form">
+        <label for="email">Firemní e-mail</label>
+        <input type="email" id="email" name="email" placeholder="jmeno@zaluzieee.cz" autocomplete="email" required />
+        <p class="login-hint" id="domains-hint">Povolené domény: @zaluzieee.cz</p>
+        <p class="login-error" id="error-email" hidden></p>
+        <button type="submit" class="btn btn--primary" id="btn-send">Poslat přihlašovací kód</button>
+      </form>
+
+      <form id="form-code" class="login-form" hidden>
+        <p class="login-success" id="code-info"></p>
+        <p class="login-hint" id="code-email"></p>
+        <p class="login-hint login-hint--dev" id="dev-code" hidden></p>
+
+        <label for="code">Potvrzovací kód z e-mailu</label>
+        <input
+          type="text"
+          id="code"
+          name="code"
+          inputmode="numeric"
+          pattern="[0-9]{6}"
+          maxlength="6"
+          placeholder="123456"
+          autocomplete="one-time-code"
+          required
+        />
+
+        <p class="login-error" id="error-code" hidden></p>
+        <button type="submit" class="btn btn--primary" id="btn-verify">Přihlásit se</button>
+        <button type="button" class="btn btn--ghost" id="btn-back">Změnit e-mail</button>
+      </form>
+    </section>
+
+    <script src="/login.js"></script>
+  </body>
+</html>

@@ -1,0 +1,8 @@
+.env
+.pgdata/
+__pycache__/
+*.py[cod]
+.DS_Store
+*.log
+_recovered/
+_styles_*.css

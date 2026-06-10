@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Trasování - Reporting</title>
+    <link rel="stylesheet" href="./styles.css?v=20260610c" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">Trasování</p>
+        <h1>Reporting montáží</h1>
+      </div>
+      <div class="app-header__right">
+        <span class="auth-email" id="authEmail" hidden></span>
+        <a href="/login.html" class="secondary-btn secondary-btn--sm" id="loginBtn" hidden>Přihlásit</a>
+        <a href="/api/auth/logout" class="secondary-btn secondary-btn--sm" id="logoutBtn" hidden>Odhlásit</a>
+        <p class="month-badge" id="monthBadge">2026</p>
+      </div>
+    </header>
+
+    <nav class="tabs" id="tabsNav">
+      <button class="tab is-active" data-tab="overview">Přehled montáže</button>
+    </nav>
+
+    <main>
+      <section id="overview" class="tab-panel is-active">
+        <div class="overview-toolbar">
+          <label>Měsíc rozpisu
+            <select id="overviewMonthKey"></select>
+          </label>
+          <label>Koef. měsíc
+            <select id="nastavenyMesic">
+              <option value="1">Leden</option><option value="2">Únor</option><option value="3">Březen</option>
+              <option value="4">Duben</option><option value="5">Květen</option><option value="6">Červen</option>
+              <option value="7">Červenec</option><option value="8" selected>Srpen</option><option value="9">Září</option>
+              <option value="10">Říjen</option><option value="11">Listopad</option><option value="12">Prosinec</option>
+            </select>
+          </label>
+          <label>Koef. rok <input type="number" id="nastavenyRok" value="2026" min="2024" max="2030" style="width:5rem" /></label>
+          <button id="syncRaynetBtn" class="secondary-btn">Stáhnout z Raynet API</button>
+          <button id="refreshOverviewBtn" class="primary-btn">Přepočítat</button>
+          <span id="apiStatus" class="api-status"></span>
+        </div>
+
+        <div class="cards" id="overviewCards"></div>
+
+        <article class="panel">
+          <div class="panel-header">
+            <h2>Číselník období</h2>
+            <button id="saveObdobiSkupinyBtn" class="secondary-btn">Uložit období</button>
+          </div>
+          <p class="panel-hint">Každá skupina má vlastní období od–do (jako v Excelu). Datum se aplikuje na všechny lokality ve skupině.</p>
+          <div class="table-wrap table-wrap--short">
+            <table>
+              <thead>
+                <tr>
+                  <th>Skupina</th>
+                  <th>Od</th>
+                  <th>Do</th>
+                  <th>Lokality ve skupině</th>
+                </tr>
+              </thead>
+              <tbody id="ciselnikSkupinyTable"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <h2>Koeficienty krajů (editace)</h2>
+            <button id="saveKoeficientyBtn" class="secondary-btn">Uložit koeficienty</button>
+          </div>
+          <p class="panel-hint">Vyplněny jen známé koeficienty (červenec–září). Ostatní měsíce doplňte ručně. Koeficient lokality = průměr krajů pro zvolený měsíc.</p>
+          <div class="table-wrap table-wrap--koef">
+            <table id="koeficientyTable">
+              <thead id="koeficientyHead"></thead>
+              <tbody id="koeficientyBody"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <h2>Podklady – fond a koeficient (vypočteno)</h2>
+            <button id="savePodkladyBtn" class="secondary-btn">Uložit fondy</button>
+          </div>
+          <div class="table-wrap table-wrap--short">
+            <table>
+              <thead>
+                <tr>
+                  <th>Lokalita</th>
+                  <th>Kraje (koef. měsíce)</th>
+                  <th>Fond (hod)</th>
+                  <th>Koeficient (průměr krajů)</th>
+                </tr>
+              </thead>
+              <tbody id="podkladyTable"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <h2>Přehled po lokalitách</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Od</th>
+                  <th>Do</th>
+                  <th>Skupina</th>
+                  <th>Lokalita</th>
+                  <th>Plán (hod)</th>
+                  <th>Naplánováno (hod)</th>
+                  <th>Plán celkem</th>
+                  <th>Napl. celkem</th>
+                  <th>Plnění</th>
+                  <th>Kolik chybí (ks)</th>
+                  <th>Objednáno (ks)</th>
+                  <th>Lze objednat (ks)</th>
+                  <th>Posunout výrobu</th>
+                </tr>
+              </thead>
+              <tbody id="overviewTable"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <h2>Tým a dostupnost</h2>
+            <button id="addMemberBtn" class="secondary-btn">+ Přidat jméno</button>
+          </div>
+          <div id="membersList" class="members-grid"></div>
+        </article>
+      </section>
+
+      <section id="month" class="tab-panel">
+        <p id="monthGridError" class="api-status is-error" hidden></p>
+        <div class="month-toolbar">
+          <button id="syncRaynetMesicBtn" class="secondary-btn">Stáhnout z Raynet API</button>
+          <button id="refreshMesicBtn" class="primary-btn">Načíst z PostgreSQL</button>
+          <span id="mesicApiStatus" class="api-status"></span>
+        </div>
+        <div class="cards" id="monthCards"></div>
+
+        <article class="panel">
+          <div class="panel-header">
+            <h2 id="monthDailyTitle">Měsíční zápis</h2>
+            <p class="copy-target-hint">Vlevo denní souhrn, vpravo montéři po dnech (jako Excel). Tlačítka → všem / → vybr. zkopírují target po dnech (1.6.=1, 2.6.=0 …). Šipka vpravo z „hodin“ přeskočí na dalšího montéra.</p>
+            <div class="copy-target-toolbar">
+              <button type="button" id="selectAllMembersBtn" class="secondary-btn">Označit vše</button>
+              <button type="button" id="clearMemberSelectionBtn" class="secondary-btn">Zrušit výběr</button>
+            </div>
+          </div>
+          <div class="table-wrap table-wrap--grid" id="monthGridWrap">
+            <table id="monthGridTable">
+              <thead id="monthGridHead"></thead>
+              <tbody id="monthGridBody"></tbody>
+              <tfoot id="monthGridFoot"></tfoot>
+            </table>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <dialog id="memberDialog">
+      <form method="dialog" id="memberForm" class="dialog-form">
+        <h3>Přidat člena týmu</h3>
+        <label>Jméno <input required name="name" /></label>
+        <label>Termín / poznámka <input name="availability" placeholder="např. 16.3. - 27.3.2026" /></label>
+        <menu>
+          <button type="button" class="dialog-cancel-btn">Zrušit</button>
+          <button type="submit" class="primary-btn">Uložit</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <script src="./app.js?v=20260610e"></script>
+  </body>
+</html>

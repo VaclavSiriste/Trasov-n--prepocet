@@ -35,21 +35,35 @@ Aplikace běží jako **jeden Docker kontejner** (frontend + API na stejném por
 
 Repozitář: [Trasov-n--prepocet](https://github.com/VaclavSiriste/Trasov-n--prepocet)
 
+**Důležité:** Složky `server/`, `scripts/` a `sql/` se na GitHub **nevkládají ručně** přes web – musí jít jedním `git push` z počítače. Bez nich Railway nespustí API ani migrace DB.
+
+Lokálně už je commit připravený (včetně všech 3 složek). Ověření:
+
 ```bash
-cd trasovani-reporting
-git init
-git remote add origin https://github.com/VaclavSiriste/Trasov-n--prepocet.git
-git add .
-git commit -m "Připraveno nasazení na Railway"
+cd /Users/vaclavsiriste/Testprojekt/trasovani-reporting
+bash scripts/check_deploy_files.sh
+git log -1 --oneline
+```
+
+Push (v **Terminálu**, ne v Cursoru bez přihlášení k GitHubu):
+
+```bash
+cd /Users/vaclavsiriste/Testprojekt/trasovani-reporting
 git push -u origin main
 ```
 
-Pokud repozitář už má commit (prázdný README), použijte:
+Při výzvě k přihlášení použijte GitHub **Personal Access Token** jako heslo (Settings → Developer settings → Tokens), ne heslo k účtu.
+
+Pokud repozitář na GitHubu ještě neexistuje: [github.com/new](https://github.com/new) → název `Trasov-n--prepocet` → bez README → pak `git push`.
+
+Pokud na GitHubu už je jen pár souborů bez `server/` (ruční upload), push je přepíše:
 
 ```bash
-git pull origin main --rebase
+git pull origin main --rebase   # jen pokud remote má README
 git push -u origin main
 ```
+
+Po pushi na GitHubu musíte vidět složky **server**, **scripts**, **sql** v kořeni repozitáře.
 
 ### 2. Railway – nový projekt
 

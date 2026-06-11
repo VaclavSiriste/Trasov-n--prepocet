@@ -17,11 +17,23 @@ _pylibs = ROOT.parent / ".pylibs"
 if _pylibs.is_dir():
     sys.path.insert(0, str(_pylibs))
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv(ROOT / ".env")
-except ImportError:
-    pass
+def _load_env() -> None:
+    env_file = ROOT / ".env"
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(env_file, override=True)
+    except ImportError:
+        pass
+    if env_file.is_file():
+        auth_enabled_in_file = any(
+            line.strip().startswith("AUTH_DISABLED=") and not line.strip().startswith("#")
+            for line in env_file.read_text(encoding="utf-8").splitlines()
+        )
+        if not auth_enabled_in_file:
+            os.environ.pop("AUTH_DISABLED", None)
+
+
+_load_env()
 
 import psycopg2
 from psycopg2.extras import RealDictCursor

@@ -5,9 +5,21 @@ from __future__ import annotations
 import os
 import smtplib
 import ssl
+from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import formataddr, parseaddr
 from urllib.parse import urlencode
+
+
+def _format_from_header(from_value: str, fallback_user: str) -> tuple[str, str]:
+    """Vrátí (From hlavička, envelope adresa). Seznam SMTP vyžaduje RFC 2047 u diakritiky."""
+    raw = (from_value or fallback_user).strip()
+    name, addr = parseaddr(raw)
+    if not addr:
+        addr = fallback_user
+    header = formataddr((name, addr)) if name else addr
+    return header, addr
 
 
 def _smtp_config() -> dict | None:
@@ -17,8 +29,18 @@ def _smtp_config() -> dict | None:
     if not host or not user or not password:
         return None
     port = int(os.environ.get("SMTP_PORT") or 587)
-    from_addr = (os.environ.get("SMTP_FROM") or user).strip()
-    return {"host": host, "port": port, "user": user, "password": password, "from": from_addr}
+    from_header, envelope_from = _format_from_header(
+        (os.environ.get("SMTP_FROM") or "").strip(),
+        user,
+    )
+    return {
+        "host": host,
+        "port": port,
+        "user": user,
+        "password": password,
+        "from_header": from_header,
+        "envelope_from": envelope_from,
+    }
 
 
 def is_email_configured() -> bool:
@@ -73,21 +95,22 @@ def send_login_email(email: str, code: str, magic_url: str) -> dict:
     )
 
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = smtp["from"]
+    msg["Subject"] = Header(subject, "utf-8")
+    msg["From"] = smtp["from_header"]
     msg["To"] = email
     msg.attach(MIMEText(text, "plain", "utf-8"))
     msg.attach(MIMEText(html, "html", "utf-8"))
+    envelope_from = smtp["envelope_from"]
 
     if smtp["port"] == 465:
         context = ssl.create_default_context()
         with smtplib.SMTP_SSL(smtp["host"], smtp["port"], context=context) as server:
             server.login(smtp["user"], smtp["password"])
-            server.sendmail(smtp["from"], [email], msg.as_string())
+            server.sendmail(envelope_from, [email], msg.as_string())
     else:
         with smtplib.SMTP(smtp["host"], smtp["port"]) as server:
             server.starttls(context=ssl.create_default_context())
             server.login(smtp["user"], smtp["password"])
-            server.sendmail(smtp["from"], [email], msg.as_string())
+            server.sendmail(envelope_from, [email], msg.as_string())
 
     return {"delivered": True, "devMode": False}

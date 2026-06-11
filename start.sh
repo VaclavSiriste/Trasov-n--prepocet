@@ -5,13 +5,18 @@ cd "$(dirname "$0")"
 export PYTHONPATH="$(dirname "$0")/../.pylibs:$(dirname "$0")/server:${PYTHONPATH:-}"
 
 if [ -f .env ]; then
+  unset AUTH_DISABLED
   set -a
   # shellcheck disable=SC1091
   source .env
   set +a
 fi
 
-bash scripts/start_local_db.sh
+if [[ "${DATABASE_URL:-}" == *supabase.com* ]] || [[ "${DATABASE_URL:-}" == *supabase.co* ]]; then
+  echo "Databáze: Supabase (lokální PostgreSQL se nespouští)"
+else
+  bash scripts/start_local_db.sh
+fi
 
 PORT="${PORT:-8080}"
 export PORT

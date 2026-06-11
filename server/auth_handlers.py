@@ -172,8 +172,6 @@ def is_public_path(path: str) -> bool:
         return True
     if path in ("/api/logout",):
         return True
-    if path.endswith((".js", ".css", ".ico", ".svg", ".woff", ".woff2")):
-        return True
     return False
 
 

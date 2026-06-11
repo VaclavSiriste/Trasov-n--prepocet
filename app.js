@@ -1958,10 +1958,10 @@ async function loadAuthSession() {
   const logout = document.getElementById("logoutBtn");
   const login = document.getElementById("loginBtn");
   try {
-    const envRes = await apiFetch("/api/auth/env-status");
-    const env = envRes.ok ? await envRes.json() : { authDisabled: true };
+    const envRes = await fetch(`${API_URL}/api/auth/env-status`, { credentials: "same-origin" });
+    const env = envRes.ok ? await envRes.json() : { authDisabled: false };
 
-    const res = await apiFetch("/api/auth/session");
+    const res = await fetch(`${API_URL}/api/auth/session`, { credentials: "same-origin" });
     const data = res.ok ? await res.json() : { ok: false };
 
     if (data?.ok) {
@@ -1971,20 +1971,29 @@ async function loadAuthSession() {
       }
       if (logout) logout.hidden = false;
       if (login) login.hidden = true;
-      return;
+      return true;
     }
 
     if (el) el.hidden = true;
     if (logout) logout.hidden = true;
-    if (login) login.hidden = Boolean(env.authDisabled);
+    if (login) login.hidden = !env.authDisabled;
+
+    if (!env.authDisabled) {
+      const next = encodeURIComponent(`${window.location.pathname}${window.location.search}`);
+      window.location.replace(`/login.html?next=${next}`);
+      return false;
+    }
+    return true;
   } catch {
-    if (login) login.hidden = true;
+    if (login) login.hidden = false;
+    return false;
   }
 }
 
 async function init() {
   try {
-    await loadAuthSession();
+    const authed = await loadAuthSession();
+    if (!authed) return;
     state = normalizeState(state);
     ensureOverviewRowsFromSkupiny();
     buildMonthTabs();

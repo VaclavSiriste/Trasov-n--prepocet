@@ -20,6 +20,16 @@ const btnVerify = document.getElementById("btn-verify");
 let challengeId = "";
 let currentEmail = "";
 
+async function readJsonSafe(res, endpointLabel) {
+  const raw = await res.text();
+  try {
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    const snippet = raw.replace(/\s+/g, " ").slice(0, 120);
+    throw new Error(`Server pro ${endpointLabel} nevrátil JSON (status ${res.status}). Odpověď začíná: ${snippet || "prázdná"}`);
+  }
+}
+
 function showError(el, msg) {
   el.textContent = msg;
   el.hidden = !msg;
@@ -30,14 +40,14 @@ if (params.get("error")) {
 }
 
 fetch("/api/auth/session", { credentials: "same-origin" })
-  .then((r) => (r.ok ? r.json() : null))
+  .then(async (r) => (r.ok ? readJsonSafe(r, "session") : null))
   .then((data) => {
     if (data?.ok) window.location.href = nextPath;
   })
   .catch(() => {});
 
 fetch("/api/auth/env-status", { credentials: "same-origin" })
-  .then((r) => r.json())
+  .then((r) => readJsonSafe(r, "env-status"))
   .then((data) => {
     if (data.allowedDomains) domainsHint.textContent = `Povolené domény: ${data.allowedDomains}`;
     if (data.hint) showError(errorEmail, data.hint);
@@ -55,7 +65,7 @@ formEmail.addEventListener("submit", async (e) => {
       credentials: "same-origin",
       body: JSON.stringify({ email: emailInput.value, next: nextPath }),
     });
-    const data = await res.json();
+    const data = await readJsonSafe(res, "request-code");
     if (!res.ok) throw new Error(data.error || "Odeslání se nepodařilo.");
 
     currentEmail = emailInput.value.trim().toLowerCase();
@@ -95,7 +105,7 @@ formCode.addEventListener("submit", async (e) => {
         next: nextPath,
       }),
     });
-    const data = await res.json();
+    const data = await readJsonSafe(res, "verify-code");
     if (!res.ok) throw new Error(data.error || "Ověření se nepodařilo.");
     window.location.href = data.next || nextPath;
   } catch (err) {

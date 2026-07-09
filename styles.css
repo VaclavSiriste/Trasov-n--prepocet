@@ -505,16 +505,16 @@ input.ok {
   text-align: center;
   border-left: 2px solid #c5d3ea;
   background: #eef4ff;
-  padding: 0.4rem 0.45rem;
+  padding: 0.45rem 0.4rem;
   vertical-align: bottom;
-  min-width: 15.5rem;
+  min-width: 11.5rem;
 }
 
 .member-head {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 0.35rem;
+  gap: 0.4rem;
 }
 
 .member-head__name {
@@ -526,18 +526,99 @@ input.ok {
   text-overflow: ellipsis;
 }
 
-.member-head__tools {
+.member-head__receive {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
   align-items: center;
   justify-content: center;
+  gap: 0.35rem;
+  font-size: 0.64rem;
+  color: var(--muted);
+  padding: 0.15rem 0.25rem;
+  border-radius: 0.4rem;
+  background: rgba(255, 255, 255, 0.55);
 }
 
-.member-head__tools input[type="checkbox"] {
+.member-head__receive-label {
+  font-weight: 600;
+}
+
+.member-head__receive input[type="checkbox"] {
   width: auto;
   margin: 0;
   padding: 0;
+}
+
+.member-head__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+}
+
+.member-head__copy-row {
+  display: grid;
+  grid-template-columns: 2.75rem 1fr;
+  align-items: center;
+  gap: 0.28rem;
+  padding: 0.22rem 0.28rem;
+  border-radius: 0.45rem;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.member-head__copy-row--target {
+  border: 1px solid #93c5fd;
+}
+
+.member-head__copy-row--region {
+  border: 1px solid #c4b5fd;
+}
+
+.member-head__copy-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.35rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-align: center;
+  border-radius: 0.35rem;
+  line-height: 1.1;
+}
+
+.member-head__copy-row--target .member-head__copy-label {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.member-head__copy-row--region .member-head__copy-label {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.member-head__copy-btns {
+  display: flex;
+  gap: 0.18rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.copy-target-btn--target {
+  border-color: #93c5fd;
+  color: #1d4ed8;
+  background: #f8fbff;
+}
+
+.copy-target-btn--target:hover {
+  background: #dbeafe;
+}
+
+.copy-target-btn--region {
+  border-color: #c4b5fd;
+  color: #6d28d9;
+  background: #faf5ff;
+}
+
+.copy-target-btn--region:hover {
+  background: #ede9fe;
 }
 
 .copy-target-btn--compact {

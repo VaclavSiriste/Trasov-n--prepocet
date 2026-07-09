@@ -32,6 +32,7 @@ const DEFAULT_FONDY = {
 
 let overviewPrehled = { rows: [], totals: {}, podklady: [], koeficienty_kraje: [], lokalita_kraje: [] };
 let overviewMonthKey = "2026-06";
+/** Zaškrtnutí příjemců kopírování – podle jména (ne indexu, stabilní při přerenderu). */
 const memberCopySelection = new Set();
 
 const OBDPOBI_SKUPINY = [
@@ -346,7 +347,7 @@ function sumMemberDailyHours(member) {
 
 function getMemberDayField(member, date, field) {
   const day = member.dailyCells?.[date];
-  if (day && day[field] !== undefined && day[field] !== "") return day[field];
+  if (day && Object.prototype.hasOwnProperty.call(day, field)) return day[field];
   if (field === "targetFlag") {
     const hours = Number(member.dailyHours?.[date] || 0);
     return hours > 0 ? 1 : (member.targetFlag ?? 0);
@@ -487,6 +488,11 @@ function createGridSelect(value, options, onChange, navMeta) {
   select.dataset.row = String(navMeta.row);
   select.dataset.col = String(navMeta.col);
   select.dataset.field = navMeta.field || "";
+  const emptyOption = document.createElement("option");
+  emptyOption.value = "";
+  emptyOption.textContent = "—";
+  if (value === "") emptyOption.selected = true;
+  select.append(emptyOption);
   options.forEach((code) => {
     const option = document.createElement("option");
     option.value = code;
@@ -948,12 +954,29 @@ function pruneImplicitDailyRosterCells(monthData) {
     Object.keys(cells).forEach((date) => {
       const day = cells[date];
       if (!day) return;
+
+      const hasDest = Object.prototype.hasOwnProperty.call(day, "destinationRegion");
+      const hasTarget = Object.prototype.hasOwnProperty.call(day, "targetFlag");
+
+      // Ručně vymazaný kraj (—) musí zůstat uložený.
+      if (hasDest && day.destinationRegion === "") {
+        if (hasTarget) {
+          const hours = Number(member.dailyHours?.[date] || 0);
+          const autoTarget = hours > 0 ? 1 : Number(member.targetFlag || 0);
+          if (day.targetFlag === undefined || day.targetFlag === "" || Number(day.targetFlag) === autoTarget) {
+            delete day.targetFlag;
+          }
+        }
+        if (Object.keys(day).length === 0) delete cells[date];
+        return;
+      }
+
       const hours = Number(member.dailyHours?.[date] || 0);
       const autoTarget = hours > 0 ? 1 : Number(member.targetFlag || 0);
       const dest = day.destinationRegion;
       const target = day.targetFlag;
-      const implicitDest = dest === undefined || dest === "" || dest === "MSK";
-      const implicitTarget = target === undefined || target === "" || Number(target) === autoTarget;
+      const implicitDest = !hasDest || dest === "MSK";
+      const implicitTarget = !hasTarget || target === "" || Number(target) === autoTarget;
       if (implicitDest && implicitTarget) delete cells[date];
     });
   });
@@ -962,8 +985,9 @@ function pruneImplicitDailyRosterCells(monthData) {
 function isExplicitDayRosterEdit(member, date) {
   const day = member.dailyCells?.[date];
   if (!day) return false;
-  if (day.destinationRegion !== undefined && day.destinationRegion !== "") return true;
-  if (day.targetFlag === undefined || day.targetFlag === "") return false;
+  if (Object.prototype.hasOwnProperty.call(day, "destinationRegion")) return true;
+  if (!Object.prototype.hasOwnProperty.call(day, "targetFlag")) return false;
+  if (day.targetFlag === "") return false;
   const hours = Number(member.dailyHours?.[date] || 0);
   const autoTarget = hours > 0 ? 1 : Number(member.targetFlag || 0);
   return Number(day.targetFlag) !== autoTarget;
@@ -983,13 +1007,12 @@ function getDailyRosterOverrides() {
       const targetFlag = day.targetFlag !== undefined && day.targetFlag !== ""
         ? Number(day.targetFlag)
         : (hours > 0 ? 1 : Number(member.targetFlag || 0));
-      if (!targetFlag && hours <= 0) return;
       entries.push({
         col_index: memberIdx + 1,
         jmeno: member.name,
         datum: date,
         target_flag: targetFlag,
-        destination_region: day.destinationRegion || "MSK",
+        destination_region: day.destinationRegion ?? "",
       });
     });
   });
@@ -1499,34 +1522,7 @@ function renderMonthGrid() {
     th.colSpan = MEMBER_FIELD_COUNT;
     th.className = "month-grid-member-head";
 
-    const wrap = document.createElement("div");
-    wrap.className = "member-head";
-
-    const nameEl = document.createElement("div");
-    nameEl.className = "member-head__name";
-    nameEl.textContent = member.name;
-    nameEl.title = member.name;
-    wrap.append(nameEl);
-
-    const tools = document.createElement("div");
-    tools.className = "member-head__tools";
-    const cb = document.createElement("input");
-    cb.type = "checkbox";
-    cb.title = "Cíl kopírování targetu";
-    cb.checked = memberCopySelection.has(realIdx);
-    cb.dataset.memberCheck = String(realIdx);
-    const btnAll = document.createElement("button");
-    btnAll.type = "button";
-    btnAll.className = "copy-target-btn copy-target-btn--compact";
-    btnAll.textContent = "→ všem";
-    btnAll.dataset.copyAll = String(realIdx);
-    const btnSel = document.createElement("button");
-    btnSel.type = "button";
-    btnSel.className = "copy-target-btn copy-target-btn--compact";
-    btnSel.textContent = "→ vybr.";
-    btnSel.dataset.copySel = String(realIdx);
-    tools.append(cb, btnAll, btnSel);
-    wrap.append(tools);
+    const wrap = buildMemberHead(member, realIdx);
     th.append(wrap);
     headRow1.append(th);
   });
@@ -1544,16 +1540,19 @@ function renderMonthGrid() {
   });
   head.append(headRow2);
 
-  head.querySelectorAll("[data-member-check]").forEach((cb) => {
+  head.querySelectorAll("[data-member-name]").forEach((cb) => {
     cb.addEventListener("change", () => {
-      toggleMemberCopySelection(Number(cb.dataset.memberCheck), cb.checked);
+      toggleMemberCopySelection(cb.dataset.memberName, cb.checked);
     });
   });
-  head.querySelectorAll("[data-copy-all]").forEach((btn) => {
-    btn.addEventListener("click", () => copyTargetFrom(Number(btn.dataset.copyAll), "all"));
-  });
-  head.querySelectorAll("[data-copy-sel]").forEach((btn) => {
-    btn.addEventListener("click", () => copyTargetFrom(Number(btn.dataset.copySel), "selected"));
+  head.querySelectorAll("[data-copy-source]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      copyTargetFrom(
+        Number(btn.dataset.copySource),
+        btn.dataset.copyMode,
+        btn.dataset.copyFields,
+      );
+    });
   });
 
   monthData.rows.forEach((row, rowIdx) => {
@@ -1722,46 +1721,144 @@ function renderMonthGrid() {
   }
 }
 
-function toggleMemberCopySelection(idx, checked) {
-  if (checked) memberCopySelection.add(idx);
-  else memberCopySelection.delete(idx);
+function createMemberCopyButton(sourceIdx, mode, fields, label) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = `copy-target-btn copy-target-btn--compact copy-target-btn--${fields}`;
+  btn.textContent = label;
+  btn.dataset.copySource = String(sourceIdx);
+  btn.dataset.copyMode = mode;
+  btn.dataset.copyFields = fields;
+  return btn;
 }
 
-function copyTargetFrom(sourceIdx, mode) {
+function buildMemberHead(member, realIdx) {
+  const wrap = document.createElement("div");
+  wrap.className = "member-head";
+
+  const nameEl = document.createElement("div");
+  nameEl.className = "member-head__name";
+  nameEl.textContent = member.name;
+  nameEl.title = member.name;
+  wrap.append(nameEl);
+
+  const receiveRow = document.createElement("div");
+  receiveRow.className = "member-head__receive";
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+  cb.title = "Zaškrtněte jako příjemce kopírování";
+  cb.checked = memberCopySelection.has(normName(member.name));
+  cb.dataset.memberName = member.name;
+  const receiveLabel = document.createElement("span");
+  receiveLabel.className = "member-head__receive-label";
+  receiveLabel.textContent = "Příjemce";
+  receiveRow.append(cb, receiveLabel);
+  wrap.append(receiveRow);
+
+  const copyBlock = document.createElement("div");
+  copyBlock.className = "member-head__copy";
+
+  const targetRow = document.createElement("div");
+  targetRow.className = "member-head__copy-row member-head__copy-row--target";
+  const targetLabel = document.createElement("span");
+  targetLabel.className = "member-head__copy-label";
+  targetLabel.textContent = "target";
+  targetLabel.title = "Kopírovat target";
+  const targetBtns = document.createElement("div");
+  targetBtns.className = "member-head__copy-btns";
+  targetBtns.append(
+    createMemberCopyButton(realIdx, "all", "target", "→ všem"),
+    createMemberCopyButton(realIdx, "selected", "target", "→ vybr."),
+  );
+  targetRow.append(targetLabel, targetBtns);
+
+  const regionRow = document.createElement("div");
+  regionRow.className = "member-head__copy-row member-head__copy-row--region";
+  const regionLabel = document.createElement("span");
+  regionLabel.className = "member-head__copy-label";
+  regionLabel.textContent = "Kraj";
+  regionLabel.title = "Kopírovat kraj";
+  const regionBtns = document.createElement("div");
+  regionBtns.className = "member-head__copy-btns";
+  regionBtns.append(
+    createMemberCopyButton(realIdx, "all", "region", "→ všem"),
+    createMemberCopyButton(realIdx, "selected", "region", "→ vybr."),
+  );
+  regionRow.append(regionLabel, regionBtns);
+
+  copyBlock.append(targetRow, regionRow);
+  wrap.append(copyBlock);
+  return wrap;
+}
+
+function getCopyFieldsMode() {
+  return document.getElementById("copyFieldsMode")?.value || "both";
+}
+
+function copyFieldsLabel(mode) {
+  if (mode === "target") return "target";
+  if (mode === "region") return "kraj";
+  return "target a kraj";
+}
+
+function sourceRegionForCopy(source, date) {
+  const srcDay = source.dailyCells?.[date];
+  if (srcDay && Object.prototype.hasOwnProperty.call(srcDay, "destinationRegion")) {
+    return srcDay.destinationRegion;
+  }
+  return getMemberDayField(source, date, "destinationRegion");
+}
+
+function toggleMemberCopySelection(name, checked) {
+  const key = normName(name);
+  if (checked) memberCopySelection.add(key);
+  else memberCopySelection.delete(key);
+}
+
+function copyTargetFrom(sourceIdx, mode, fields = getCopyFieldsMode()) {
   const monthData = getActiveMonthData();
   const source = monthData.members[sourceIdx];
   if (!source) return;
 
+  const copyTarget = fields === "both" || fields === "target";
+  const copyRegion = fields === "both" || fields === "region";
   let count = 0;
 
   monthData.members.forEach((member, idx) => {
     if (idx === sourceIdx) return;
-    if (mode === "all" || memberCopySelection.has(idx)) {
-      if (!member.dailyCells) member.dailyCells = {};
-      monthData.rows.forEach((row) => {
-        const value = Number(getMemberDayField(source, row.date, "targetFlag") || 0);
-        if (!member.dailyCells[row.date]) member.dailyCells[row.date] = {};
-        member.dailyCells[row.date].targetFlag = value;
-      });
-      count += 1;
-    }
+    const isSelected = mode === "all" || memberCopySelection.has(normName(member.name));
+    if (!isSelected) return;
+
+    if (!member.dailyCells) member.dailyCells = {};
+    monthData.rows.forEach((row) => {
+      if (!member.dailyCells[row.date]) member.dailyCells[row.date] = {};
+      const day = member.dailyCells[row.date];
+      if (copyTarget) {
+        day.targetFlag = Number(getMemberDayField(source, row.date, "targetFlag") || 0);
+      }
+      if (copyRegion) {
+        day.destinationRegion = sourceRegionForCopy(source, row.date);
+      }
+    });
+    count += 1;
   });
 
   if (mode === "selected" && count === 0) {
-    alert("Nejprve zaškrtněte montéry, kterým chcete target zkopírovat.");
+    alert(`Nejprve zaškrtněte montéry, kterým chcete zkopírovat ${copyFieldsLabel(fields)}.`);
     return;
   }
 
   saveState();
+  scheduleSaveMesicZapis();
   renderMonthGrid();
   renderCards();
   if (overviewMonthKey === activeMonthKey) fetchPrehledFromApi();
 }
 
 function pruneMemberCopySelection() {
-  const count = getActiveMonthData().members.length;
-  [...memberCopySelection].forEach((idx) => {
-    if (idx >= count) memberCopySelection.delete(idx);
+  const names = new Set(getActiveMonthData().members.map((m) => normName(m.name)));
+  [...memberCopySelection].forEach((name) => {
+    if (!names.has(name)) memberCopySelection.delete(name);
   });
 }
 
@@ -1815,6 +1912,7 @@ function setupTabs() {
 
       if (tabId === "month") {
         activeMonthKey = tabButton.dataset.month;
+        pruneMemberCopySelection();
         document.getElementById("monthBadge").textContent = getMonthLabel(activeMonthKey);
         renderMonthGrid();
         renderCards();
@@ -1931,7 +2029,10 @@ function setupMesicToolbar() {
 
 function setupMemberCopyToolbar() {
   document.getElementById("selectAllMembersBtn")?.addEventListener("click", () => {
-    getActiveMonthData().members.forEach((_, idx) => memberCopySelection.add(idx));
+    const monthData = getActiveMonthData();
+    getGridMembers(monthData).forEach((member) => {
+      memberCopySelection.add(normName(member.name));
+    });
     renderMonthMembers();
   });
   document.getElementById("clearMemberSelectionBtn")?.addEventListener("click", () => {

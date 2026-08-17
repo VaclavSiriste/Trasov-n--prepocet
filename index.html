@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Trasování - Reporting</title>
-    <link rel="stylesheet" href="./styles.css?v=20260709a" />
+    <link rel="stylesheet" href="./styles.css?v=20260817o" />
   </head>
   <body>
     <header class="app-header">
@@ -17,6 +17,7 @@
         <a href="/login.html" class="secondary-btn secondary-btn--sm" id="loginBtn" hidden>Přihlásit</a>
         <a href="/api/auth/logout" class="secondary-btn secondary-btn--sm" id="logoutBtn" hidden>Odhlásit</a>
         <p class="month-badge" id="monthBadge">2026</p>
+        <p class="app-version" id="appVersion" title="Verze nasazení">v20260817o</p>
       </div>
     </header>
 
@@ -119,6 +120,7 @@
                   <th>Napl. celkem</th>
                   <th>Plnění</th>
                   <th>Kolik chybí (ks)</th>
+                  <th>Celkem zakázek</th>
                   <th>Objednáno (ks)</th>
                   <th>Lze objednat (ks)</th>
                   <th>Posunout výrobu</th>
@@ -128,19 +130,12 @@
             </table>
           </div>
         </article>
-
-        <article class="panel">
-          <div class="panel-header">
-            <h2>Tým a dostupnost</h2>
-            <button id="addMemberBtn" class="secondary-btn">+ Přidat jméno</button>
-          </div>
-          <div id="membersList" class="members-grid"></div>
-        </article>
       </section>
 
       <section id="month" class="tab-panel">
         <p id="monthGridError" class="api-status is-error" hidden></p>
         <div class="month-toolbar">
+          <p class="month-toolbar__label" id="monthEditorLabel">Měsíční zápis</p>
           <button id="syncRaynetMesicBtn" class="secondary-btn">Stáhnout z Raynet API</button>
           <button id="refreshMesicBtn" class="primary-btn">Načíst z PostgreSQL</button>
           <span id="mesicApiStatus" class="api-status"></span>
@@ -149,36 +144,50 @@
 
         <article class="panel">
           <div class="panel-header">
-            <h2 id="monthDailyTitle">Měsíční zápis</h2>
-            <p class="copy-target-hint">U zdrojového montéra použijte pod jeho jménem řádky <strong>target</strong> a <strong>Kraj</strong>. Zaškrtněte příjemce a klikněte → vybr., nebo rovnou → všem. U kraje lze zvolit „—“ pro vymazání (např. víkend).</p>
-            <div class="copy-target-toolbar">
-              <button type="button" id="selectAllMembersBtn" class="secondary-btn">Označit vše</button>
-              <button type="button" id="clearMemberSelectionBtn" class="secondary-btn">Zrušit výběr</button>
+            <h2 id="monthRosterTitle">Montéři v tomto měsíci</h2>
+            <div class="month-roster-toolbar">
+              <select id="monthRosterSelect" class="month-roster-select" aria-label="Přidat montéra">
+                <option value="">— vyberte montéra —</option>
+              </select>
+              <button type="button" id="monthRosterAddBtn" class="secondary-btn">+ Přidat</button>
+              <button type="button" id="monthRosterDefaultBtn" class="secondary-btn">Výchozí seznam</button>
+              <button type="button" id="monthRosterSaveBtn" class="primary-btn">Uložit montéry</button>
             </div>
           </div>
-          <div class="table-wrap table-wrap--grid" id="monthGridWrap">
-            <table id="monthGridTable">
-              <thead id="monthGridHead"></thead>
-              <tbody id="monthGridBody"></tbody>
-              <tfoot id="monthGridFoot"></tfoot>
-            </table>
+          <p class="copy-target-hint">Horní seznam určuje, kteří montéři budou ve spodní mřížce i ve statistikách měsíce. Odebrání se hned uloží.</p>
+          <div id="monthRosterList" class="members-grid"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <h2 id="monthDailyTitle">Měsíční zápis</h2>
+            <p class="copy-target-hint">Nejdřív nastavte kraj v první buňce, pak táhněte myší přes další buňky – hodnota se zkopíruje. Nebo označte buňky a klikněte <strong>Vyplnit označené</strong>.</p>
+            <div class="copy-target-toolbar">
+              <button type="button" id="selectAllMembersBtn" class="secondary-btn">Označit vše</button>
+              <button type="button" id="clearMemberSelectionBtn" class="secondary-btn">Zrušit výběr montérů</button>
+              <button type="button" id="fillSelectedRegionsBtn" class="primary-btn">Vyplnit označené</button>
+              <button type="button" id="clearGridRegionSelectionBtn" class="secondary-btn">Zrušit označení buněk</button>
+              <span id="gridRegionSelectionHint" class="copy-target-hint"></span>
+            </div>
+          </div>
+          <div class="month-grid-shell" id="monthGridShell">
+            <div class="month-grid-scrollbar" aria-label="Posun mezi montéry">
+              <button type="button" class="month-grid-scroll-btn" id="monthGridScrollLeft" title="Posunout doleva" aria-label="Posunout doleva">‹</button>
+              <p class="month-grid-scroll-hint" id="monthGridScrollHint">Posouvejte mezi jmény montérů</p>
+              <button type="button" class="month-grid-scroll-btn" id="monthGridScrollRight" title="Posunout doprava" aria-label="Posunout doprava">›</button>
+            </div>
+            <div class="table-wrap table-wrap--grid" id="monthGridWrap">
+              <table id="monthGridTable">
+                <thead id="monthGridHead"></thead>
+                <tbody id="monthGridBody"></tbody>
+                <tfoot id="monthGridFoot"></tfoot>
+              </table>
+            </div>
           </div>
         </article>
       </section>
     </main>
 
-    <dialog id="memberDialog">
-      <form method="dialog" id="memberForm" class="dialog-form">
-        <h3>Přidat člena týmu</h3>
-        <label>Jméno <input required name="name" /></label>
-        <label>Termín / poznámka <input name="availability" placeholder="např. 16.3. - 27.3.2026" /></label>
-        <menu>
-          <button type="button" class="dialog-cancel-btn">Zrušit</button>
-          <button type="submit" class="primary-btn">Uložit</button>
-        </menu>
-      </form>
-    </dialog>
-
-    <script src="./app.js?v=20260709a"></script>
+    <script src="./app.js?v=20260817o"></script>
   </body>
 </html>

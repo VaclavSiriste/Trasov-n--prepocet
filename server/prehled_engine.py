@@ -167,7 +167,7 @@ def merge_daily_rosters(base: list[dict], overlay: list[dict]) -> list[dict]:
 
 
 def derive_daily_roster_from_raynet(raynet_rows: list[dict]) -> list[dict]:
-    """Z Raynet hodin sestaví denní rozpis: montér má target=1 v den, kdy má hodiny (výchozí kraj MSK)."""
+    """Z Raynet hodin sestaví denní rozpis: montér má target=1 v den, kdy má hodiny, kraj zůstává prázdný."""
     entries: list[dict] = []
     seen: set[tuple[str, str]] = set()
     for row in raynet_rows:
@@ -192,7 +192,7 @@ def derive_daily_roster_from_raynet(raynet_rows: list[dict]) -> list[dict]:
                 "jmeno": name,
                 "datum": day.isoformat(),
                 "target_flag": 1,
-                "destination_region": "MSK",
+                "destination_region": "",
             })
     return entries
 
@@ -206,7 +206,7 @@ def roster_from_daily(daily_roster: list[dict]) -> list[dict]:
         by_name[name] = {
             "jmeno": name,
             "target_flag": int(entry.get("target_flag") or 0),
-            "destination_region": entry.get("destination_region") or "MSK",
+            "destination_region": entry.get("destination_region") or "",
         }
     return list(by_name.values())
 
@@ -379,6 +379,7 @@ def compute_period_row(
         else None
     )
     ordered = float(obdobi.get("objednano_ks") or 0)
+    celkem_zakazek = float(obdobi.get("celkem_zakazek") or 0)
     lze_objednat = round(missing_ks - ordered, 2) if missing_ks is not None else None
     plneni = round(sched_celkem / plan_celkem, 4) if plan_celkem else 0
 
@@ -398,6 +399,7 @@ def compute_period_row(
         "plneni": plneni,
         "kolik_chybi_ks": missing_ks,
         "objednano_ks": ordered,
+        "celkem_zakazek": celkem_zakazek,
         "lze_objednat_ks": lze_objednat,
         "posunout_vyrobu": obdobi.get("posunout_vyrobu") or "NE",
         "fond": fond,
@@ -448,6 +450,7 @@ def compute_overview(
             2,
         ),
         "objednano_ks": round(sum(r["objednano_ks"] for r in rows), 2),
+        "celkem_zakazek": round(sum(r["celkem_zakazek"] for r in rows), 2),
         "plneni": 0,
     }
     if totals["plan_celkem"]:

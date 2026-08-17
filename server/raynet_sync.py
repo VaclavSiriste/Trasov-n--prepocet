@@ -138,9 +138,11 @@ def call_raynet_api(
 
 def api_fetch(username: str, api_key: str, instance: str, parameters: dict) -> list[dict]:
     all_responses: list[dict] = []
-    for j in range(len(parameters["category"])):
+    n_cat = len(parameters["category"])
+    for j in range(n_cat):
         offset = 0
         i = 0
+        print(f"  Raynet kategorie {j + 1}/{n_cat} (id={parameters['category'][j]})…", flush=True)
         while True:
             response = call_raynet_api(
                 username=username,
@@ -152,6 +154,7 @@ def api_fetch(username: str, api_key: str, instance: str, parameters: dict) -> l
             )
             all_responses.append(response)
             data = response.get("data") or []
+            print(f"    offset={offset}: {len(data)} záznamů", flush=True)
             if len(data) < 1000 or len(all_responses[i].get("data") or []) % 1000 != 0:
                 break
             offset += 1000

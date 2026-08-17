@@ -39,7 +39,13 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from auth_handlers import handle_auth_get, handle_auth_post, require_auth
-from mesic_engine import build_mesic_data, save_zapis_den
+from mesic_engine import (
+    build_mesic_data,
+    fetch_mesic_roster,
+    is_roster_configured,
+    save_mesic_roster,
+    save_zapis_den,
+)
 from prehled_engine import (
     KRAJE_LIST,
     compute_overview,
@@ -92,7 +98,12 @@ def serve_static(handler, path: str) -> bool:
     handler.send_response(200)
     handler.send_header("Content-Type", mime)
     handler.send_header("Content-Length", str(len(data)))
-    handler.send_header("Cache-Control", "no-cache")
+    # Ať všichni klienti berou stejný JS/CSS (žádná stará cache)
+    if file_path.suffix.lower() in (".js", ".css", ".html"):
+        handler.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        handler.send_header("Pragma", "no-cache")
+    else:
+        handler.send_header("Cache-Control", "no-cache")
     handler.end_headers()
     handler.wfile.write(data)
     return True
@@ -122,8 +133,37 @@ def fetch_podklady(cur):
     return cur.fetchall()
 
 
+def fetch_tym_monteru(cur):
+    cur.execute(
+        """SELECT jmeno, dostupnost FROM tym_monteru
+           ORDER BY sort_order, jmeno"""
+    )
+    return [
+        {"name": r["jmeno"], "availability": r["dostupnost"] or ""}
+        for r in cur.fetchall()
+    ]
+
+
+def save_tym_monteru(cur, members: list[dict]) -> int:
+    cur.execute("DELETE FROM tym_monteru")
+    saved = 0
+    for idx, row in enumerate(members or []):
+        name = str(row.get("name") or "").strip()
+        if not name:
+            continue
+        availability = str(row.get("availability") or "").strip()
+        cur.execute(
+            """INSERT INTO tym_monteru (jmeno, dostupnost, sort_order)
+               VALUES (%s, %s, %s)""",
+            (name, availability, idx + 1),
+        )
+        saved += 1
+    return saved
+
+
 def fetch_obdobi(cur, ciselnik_id=None):
-    sql = """SELECT id, ciselnik_id, od, "do", skupina, lokalita, objednano_ks, posunout_vyrobu, sort_order
+    sql = """SELECT id, ciselnik_id, od, "do", skupina, lokalita, objednano_ks, celkem_zakazek,
+                    posunout_vyrobu, sort_order
              FROM prehled_obdobi WHERE 1=1"""
     params = []
     if ciselnik_id:
@@ -220,7 +260,7 @@ def save_daily_roster(cur, mesic_key: str, entries: list[dict]) -> int:
                 name,
                 day,
                 int(entry.get("target_flag") or 0),
-                entry.get("destination_region") or "MSK",
+                entry.get("destination_region") or "",
             ),
         )
         saved += 1
@@ -391,6 +431,19 @@ class Handler(BaseHTTPRequestHandler):
                     json_response(self, 200, build_mesic_data(cur, mesic_key, members))
                     return
 
+                if parsed.path == "/api/mesic-roster":
+                    mesic_key = qs.get("mesic_key", ["2026-06"])[0]
+                    json_response(self, 200, {
+                        "mesic_key": mesic_key,
+                        "roster": fetch_mesic_roster(cur, mesic_key),
+                        "roster_configured": is_roster_configured(cur, mesic_key),
+                    })
+                    return
+
+                if parsed.path == "/api/tym-monteru":
+                    json_response(self, 200, {"members": fetch_tym_monteru(cur)})
+                    return
+
             json_response(self, 404, {"error": "Not found"})
         except Exception as exc:
             json_response(self, 500, {"error": str(exc)})
@@ -438,6 +491,25 @@ class Handler(BaseHTTPRequestHandler):
                     })
                     return
 
+                if parsed.path == "/api/mesic-roster":
+                    mesic_key = body.get("mesic_key", "2026-06")
+                    names = body.get("names") or []
+                    if not names and body.get("roster"):
+                        names = [
+                            r.get("jmeno") or r.get("name")
+                            for r in body["roster"]
+                            if r.get("jmeno") or r.get("name")
+                        ]
+                    saved = save_mesic_roster(cur, mesic_key, names)
+                    conn.commit()
+                    json_response(self, 200, {
+                        "ok": True,
+                        "saved": saved,
+                        "roster": fetch_mesic_roster(cur, mesic_key),
+                        "roster_configured": True,
+                    })
+                    return
+
                 if parsed.path == "/api/sync-raynet":
                     only = body.get("only", "all")
                     if only not in ("main", "prejezdy", "all"):
@@ -458,6 +530,12 @@ class Handler(BaseHTTPRequestHandler):
                         )
                     conn.commit()
                     json_response(self, 200, {"ok": True})
+                    return
+
+                if parsed.path == "/api/tym-monteru":
+                    saved = save_tym_monteru(cur, body.get("members") or [])
+                    conn.commit()
+                    json_response(self, 200, {"ok": True, "saved": saved})
                     return
 
                 if parsed.path == "/api/koeficienty-kraje":
@@ -495,18 +573,21 @@ class Handler(BaseHTTPRequestHandler):
                     if row.get("id"):
                         cur.execute(
                             """UPDATE prehled_obdobi SET od=%s, "do"=%s, skupina=%s, lokalita=%s,
-                               objednano_ks=%s, posunout_vyrobu=%s, sort_order=%s, ciselnik_id=%s WHERE id=%s""",
+                               objednano_ks=%s, celkem_zakazek=%s, posunout_vyrobu=%s, sort_order=%s,
+                               ciselnik_id=%s WHERE id=%s""",
                             (row["od"], row["do"], row.get("skupina"), row["lokalita"],
-                             row.get("objednano_ks", 0), row.get("posunout_vyrobu", "NE"),
+                             row.get("objednano_ks", 0), row.get("celkem_zakazek", 0),
+                             row.get("posunout_vyrobu", "NE"),
                              row.get("sort_order", 0), row.get("ciselnik_id"), row["id"]),
                         )
                     else:
                         cur.execute(
                             """INSERT INTO prehled_obdobi (od, "do", skupina, lokalita, objednano_ks,
-                               posunout_vyrobu, sort_order, ciselnik_id)
-                               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                               celkem_zakazek, posunout_vyrobu, sort_order, ciselnik_id)
+                               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                             (row["od"], row["do"], row.get("skupina"), row["lokalita"],
-                             row.get("objednano_ks", 0), row.get("posunout_vyrobu", "NE"),
+                             row.get("objednano_ks", 0), row.get("celkem_zakazek", 0),
+                             row.get("posunout_vyrobu", "NE"),
                              row.get("sort_order", 0), row.get("ciselnik_id")),
                         )
                     conn.commit()

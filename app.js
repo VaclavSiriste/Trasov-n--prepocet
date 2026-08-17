@@ -34,6 +34,10 @@ let overviewPrehled = { rows: [], totals: {}, podklady: [], koeficienty_kraje: [
 let overviewMonthKey = "2026-06";
 /** Zaškrtnutí příjemců kopírování – podle jména (ne indexu, stabilní při přerenderu). */
 const memberCopySelection = new Set();
+/** Označené buňky sloupce Kraj – klíč "row:col". */
+const gridRegionSelection = new Set();
+let gridRegionAnchor = null;
+let gridRegionDragging = false;
 
 const OBDPOBI_SKUPINY = [
   { key: "MSK", nazev: "MSK", lokality: ["MSK"], defaultOd: "2026-06-15", defaultDo: "2026-06-21" },
@@ -131,6 +135,20 @@ const defaultJuneRows = [
   { date: "2026-06-30", monterHours: 36.51, collected: 0, montageCount: 9, avgPerDay: 1.12, reason: "" },
 ];
 
+const MONTERI_SEZNAM = [
+  "Jaroslav Balog", "Dominik Žihala", "Mirek Truhelka", "Jakub Krejza", "Vojtěch Žihala",
+  "Karel Vengřinovič", "Tomáš Bok", "Stanislav Ivanov", "Roman Bek", "Filip Špígl",
+  "Viktor Heger", "Adam Blažej", "Martin Strakoš", "Vladimír Novotný", "Petr Griač",
+  "Kamil Beneš", "Radomír Ipri", "Arnošt Mynář", "Josef Fojtík", "Rostislav Vjačka",
+  "Milan Smutný", "Miroslav Pecháček", "David Vallo", "Jakub Bečvář", "Jiří Dvořák",
+  "Michal Kurfiřt", "Roman Marejka", "Jan Lorenc", "Radek Smoček", "René Berger",
+  "Martin Bursík", "Petr Orel", "David Dočkal", "Matěj Čerych", "Maksim Dziarabkin",
+  "Denis Willert", "Vladimir Chmelík", "Norbert Bider", "Tomáš Nesvačil", "Martin Žák",
+  "Daniel Krkoška", "Jakub Fišer", "René Rovňak", "Jan Zemčík", "Lukáš Pospíšil",
+  "Ondřej Crha", "Radovan Tesař", "Jan Perlík", "Václav Vála", "Tomáš Stoklasa", "Pavel Čajka",
+  "Karel Kretschmann",
+];
+
 const defaultState = {
   overviewRows: [
     { from: "2026-06-01", to: "2026-06-07", location: "MSK", plannedHours: 123.5, scheduledHours: 101.05, missingKs: 11.81, orderedNotPlanned: 106, shiftProduction: "NE" },
@@ -140,38 +158,6 @@ const defaultState = {
     { from: "2026-06-01", to: "2026-06-14", location: "PL", plannedHours: 120, scheduledHours: 106.55, missingKs: 0, orderedNotPlanned: 27, shiftProduction: "NE" },
     { from: "2026-06-01", to: "2026-06-14", location: "Ústí", plannedHours: 100, scheduledHours: 105.92, missingKs: 0, orderedNotPlanned: 13, shiftProduction: "NE" },
     { from: "2026-06-01", to: "2026-06-14", location: "Libr", plannedHours: 84.5, scheduledHours: 79.42, missingKs: 0, orderedNotPlanned: 10, shiftProduction: "NE" },
-  ],
-  members: [
-    { name: "Tomáš Körner", availability: "17.11. - 5.12." },
-    { name: "Petr Svoboda", availability: "17.11. - 5.12." },
-    { name: "Adam Hurban", availability: "1.12. - 19.12." },
-    { name: "Denis David", availability: "1.12. - 19.12." },
-    { name: "Lubomír Micov", availability: "1.12. - 19.12." },
-    { name: "Václav Paletář", availability: "15.12. - 3.1.2026" },
-    { name: "Daniel Mácha", availability: "15.12. - 3.1.2026" },
-    { name: "Jan Holec", availability: "15.12. - 3.1.2026" },
-    { name: "Jaromír Rozsíval", availability: "16.2. - 27.2.2026" },
-    { name: "Vojtěch Slavinský", availability: "16.3. - 27.3.2026" },
-    { name: "Zbyněk Jergl", availability: "16.3. - 27.3.2026" },
-    { name: "Antonín Trenkner", availability: "16.3. - 27.3.2026" },
-    { name: "Zdeněk Pokorný", availability: "16.3. - 27.3.2026" },
-    { name: "David Duch", availability: "30.3. - 10.4.2026" },
-    { name: "Dominik Šípek", availability: "30.3. - 10.4.2026" },
-    { name: "Jindřich Baštář", availability: "30.3. - 10.4.2026" },
-    { name: "Daniel Král", availability: "30.3. - 10.4.2026" },
-    { name: "Martin Onderka", availability: "6.4. - 24.4.2026" },
-    { name: "Jan Veverka", availability: "6.4. - 24.4.2026" },
-    { name: "Michal Macháček", availability: "4.5. - 22.5.2026" },
-    { name: "Vilém Mazák", availability: "4.5. - 22.5.2026" },
-    { name: "Jiří Staněk", availability: "18.5. - 5.6.2026" },
-    { name: "René Berger", availability: "" },
-    { name: "Ivan Tokoš", availability: "" },
-    { name: "Michal Kurfiřt", availability: "" },
-    { name: "Radek Smoček", availability: "" },
-    { name: "Roman Marejka", availability: "" },
-    { name: "Roman Zwolski", availability: "" },
-    { name: "Dominik Žihala", availability: "" },
-    { name: "Jakub Krejza", availability: "" },
   ],
   months: {
     "2026-06": {
@@ -186,57 +172,33 @@ const defaultState = {
 
 let state = loadState();
 let activeMonthKey = "2026-06";
+/** Po úspěšném načtení z PostgreSQL je server zdrojem pravdy (ne localStorage). */
+let serverMesicLoaded = false;
+/** Zabrání duplicitní hlavičce při souběžném renderMonthGrid(). */
+let monthGridRenderToken = 0;
+/** Ignoruje zastaralou odpověď při rychlém opakovaném načtení měsíce. */
+let mesicFetchSeq = 0;
 
 function loadState() {
+  // Sdílená data vždy z defaultu + API. localStorage se nepoužívá jako zdroj,
+  // ať mají všichni klienti stejný pohled (nezávisle na staré cache).
   try {
-    const savedV2 = localStorage.getItem(STORAGE_KEY);
-    if (savedV2) {
-      return normalizeState({ ...structuredClone(defaultState), ...JSON.parse(savedV2) });
-    }
-
-    const savedV1 = localStorage.getItem("trasovani-reporting-v1");
-    if (savedV1) {
-      const parsed = JSON.parse(savedV1);
-      const migrated = { ...structuredClone(defaultState), ...parsed };
-      if (parsed.juneRows) {
-        migrated.months = migrated.months || {};
-        migrated.months["2026-06"] = {
-          rows: parsed.juneRows,
-          members: parsed.juneMembers || [],
-        };
-      }
-      delete migrated.juneRows;
-      delete migrated.juneMembers;
-      return normalizeState(migrated);
-    }
-
-    return normalizeState(structuredClone(defaultState));
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem("trasovani-reporting-v1");
   } catch {
-    return normalizeState(structuredClone(defaultState));
+    /* ignore */
   }
+  return normalizeState(structuredClone(defaultState));
 }
 
 function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  // Úmyslně neukládáme do localStorage – pravda je v PostgreSQL.
 }
 
-const MONTH_LEFT_COLS = 6;
+const MONTH_LEFT_COLS = 4;
 const MEMBER_FIELD_COUNT = 4;
 
-const MONTERI_JMENA = new Set(
-  [
-    "Jaroslav Balog", "Dominik Žihala", "Mirek Truhelka", "Jakub Krejza", "Vojtěch Žihala",
-    "Karel Vengřinovič", "Tomáš Bok", "Stanislav Ivanov", "Roman Bek", "Filip Špígl",
-    "Viktor Heger", "Adam Blažej", "Martin Strakoš", "Vladimír Novotný", "Petr Griač",
-    "Kamil Beneš", "Radomír Ipri", "Arnošt Mynář", "Josef Fojtík", "Rostislav Vjačka",
-    "Milan Smutný", "Miroslav Pecháček", "David Vallo", "Jakub Bečvář", "Jiří Dvořák",
-    "Michal Kurfiřt", "Roman Marejka", "Jan Lorenc", "Radek Smoček", "René Berger",
-    "Martin Bursík", "Petr Orel", "David Dočkal", "Matěj Čerych", "Maksim Dziarabkin",
-    "Denis Willert", "Vladimir Chmelík", "Norbert Bider", "Tomáš Nesvačil", "Martin Žák",
-    "Daniel Krkoška", "Jakub Fišer", "René Rovňak", "Jan Zemčík", "Lukáš Pospíšil",
-    "Ondřej Crha", "Radovan Tesař", "Jan Perlík", "Václav Vála", "Tomáš Stoklasa", "Pavel Čejka",
-  ].map((n) => n.trim().toLowerCase()),
-);
+const MONTERI_JMENA = new Set(MONTERI_SEZNAM.map((n) => n.trim().toLowerCase()));
 
 function normName(name) {
   return (name || "").trim().toLowerCase();
@@ -246,38 +208,81 @@ function isMonterName(name) {
   return MONTERI_JMENA.has(normName(name));
 }
 
-/** Montéři pro měsíční mřížku – jen skuteční montéři, případně s hodinami v měsíci. */
-const DEFAULT_GRID_MONTERI = [
-  "Dominik Žihala", "Jakub Krejza", "Martin Strakoš", "Jan Zemčík", "Radovan Tesař",
-  "Josef Fojtík", "Daniel Krkoška", "Maksim Dziarabkin", "Vladimír Novotný", "Denis Willert",
-];
-
-function getGridMembers(monthData) {
-  const all = monthData.members || [];
-  const withHours = all
-    .filter((m) => sumMemberDailyHours(m) > 0 || Number(m.mountedHours || 0) > 0)
-    .sort((a, b) => Number(b.mountedHours || 0) - Number(a.mountedHours || 0));
-  if (withHours.length) return withHours.slice(0, 20);
-  const mont = all.filter((m) => isMonterName(m.name));
-  if (mont.length) return mont.slice(0, 20);
-  const fromHours = all.filter((m) => sumMemberDailyHours(m) > 0 || Number(m.mountedHours || 0) > 0);
-  if (fromHours.length) return fromHours;
-  return DEFAULT_GRID_MONTERI.map((name) => {
-    const found = all.find((m) => normName(m.name) === normName(name));
-    return found || {
-      name,
-      mountedHours: 0,
-      dailyHours: {},
-      dailyCells: {},
-      targetFlag: 0,
-      destinationRegion: "MSK",
-      actualFlag: 0,
-    };
-  });
+function memberHasGridActivity(member) {
+  if (sumMemberDailyHours(member) > 0 || Number(member.mountedHours || 0) > 0) return true;
+  const cells = member.dailyCells || {};
+  return Object.keys(cells).some((date) => isExplicitDayRosterEdit(member, date));
 }
 
-function isMonthTabActive() {
-  return document.getElementById("month")?.classList.contains("is-active");
+/** Montéři v mřížce – řízeno horním seznamem pro daný měsíc. */
+function getGridMembers(monthData, monthKey = activeMonthKey) {
+  const names = getMonthRosterNames(monthKey);
+  if (!names.length) return [];
+  const byName = new Map((monthData.members || []).map((m) => [normName(m.name), m]));
+  return names.map((name) => byName.get(normName(name)) || createEmptyMonthMember(name));
+}
+
+function createEmptyMonthMember(name) {
+  return {
+    name,
+    mountedHours: 0,
+    dailyHours: {},
+    dailyCells: {},
+    targetFlag: 0,
+    destinationRegion: "",
+    actualFlag: 0,
+  };
+}
+
+function getMonthRosterNames(monthKey = activeMonthKey) {
+  const monthData = state.months[monthKey];
+  if (!monthData) return [];
+  if (monthData.rosterNames?.length) return [...monthData.rosterNames];
+  return (monthData.members || []).map((m) => m.name).filter(Boolean);
+}
+
+function deriveRosterNamesFromMesicData(data, memberByName) {
+  if (data.roster_configured) {
+    return (data.roster || []).map((r) => r.jmeno).filter(Boolean);
+  }
+  const saved = (data.roster || []).map((r) => r.jmeno).filter(Boolean);
+  if (saved.length) return saved;
+
+  const fromApi = (data.members || []).map((m) => m.name).filter(Boolean);
+  if (fromApi.length) return fromApi;
+
+  const seen = new Set();
+  const fromDaily = [];
+  [...(data.daily_roster || [])]
+    .sort((a, b) => Number(a.col_index || 0) - Number(b.col_index || 0))
+    .forEach((entry) => {
+      const name = String(entry.jmeno || "").trim();
+      const key = normName(name);
+      if (!name || seen.has(key)) return;
+      seen.add(key);
+      fromDaily.push(name);
+    });
+  if (fromDaily.length) return fromDaily;
+
+  return Array.from(memberByName.values()).map((m) => m.name).filter(Boolean);
+}
+
+function setMonthRosterNames(monthKey, names, { lock = true } = {}) {
+  const monthData = ensureMonth(monthKey);
+  const unique = [];
+  const seen = new Set();
+  (names || []).forEach((raw) => {
+    const name = String(raw || "").trim();
+    const key = normName(name);
+    if (!name || seen.has(key)) return;
+    seen.add(key);
+    unique.push(name);
+  });
+  monthData.rosterNames = unique;
+  const byName = new Map((monthData.members || []).map((m) => [normName(m.name), m]));
+  monthData.members = unique.map((name) => byName.get(normName(name)) || createEmptyMonthMember(name));
+  monthData.rosterConfigured = Boolean(lock);
+  if (lock) recomputeMonthStatsFromRoster(monthData);
 }
 
 function showMonthGridError(message) {
@@ -345,43 +350,57 @@ function sumMemberDailyHours(member) {
   return Object.values(daily).reduce((acc, h) => acc + Number(h || 0), 0);
 }
 
+/** Montérohodiny technika v konkrétní den (0 = nepracoval). */
+function memberHoursOnDay(member, date) {
+  const raw = member?.dailyHours?.[date];
+  if (raw == null || raw === "") return 0;
+  const n = Number(String(raw).replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
+
 function getMemberDayField(member, date, field) {
   const day = member.dailyCells?.[date];
+  const hours = memberHoursOnDay(member, date);
   if (day && Object.prototype.hasOwnProperty.call(day, field)) return day[field];
-  if (field === "targetFlag") {
-    const hours = Number(member.dailyHours?.[date] || 0);
-    return hours > 0 ? 1 : (member.targetFlag ?? 0);
-  }
-  if (field === "destinationRegion") return member.destinationRegion ?? "MSK";
-  if (field === "actualFlag") return member.actualFlag ?? 0;
+  if (field === "targetFlag") return hours > 0 ? 1 : 0;
+  if (field === "destinationRegion") return hours > 0 ? (member.destinationRegion ?? "") : "";
+  if (field === "actualFlag") return hours > 0 ? 1 : 0;
   return "";
+}
+
+/** Skutečnost = 1 právě když má technik v daný den montérohodiny (> 0). */
+function getMemberDayActual(member, date) {
+  return memberHoursOnDay(member, date) > 0 ? 1 : 0;
 }
 
 function setMemberDayField(memberIdx, date, field, value) {
   const member = getActiveMonthData().members[memberIdx];
+  if (!member) return;
   if (!member.dailyCells) member.dailyCells = {};
   if (!member.dailyCells[date]) member.dailyCells[date] = {};
   member.dailyCells[date][field] = value;
 }
 
-function createDefaultMonthMembers(members = []) {
-  return members.map((member) => ({
-    name: member.name,
-    mountedHours: 0,
-    dailyHours: {},
-    dailyCells: {},
-    targetFlag: 0,
-    destinationRegion: "MSK",
-    actualFlag: 0,
-  }));
+function setMemberDayFieldForMember(member, date, field, value) {
+  if (!member) return;
+  if (!member.dailyCells) member.dailyCells = {};
+  if (!member.dailyCells[date]) member.dailyCells[date] = {};
+  member.dailyCells[date][field] = value;
 }
 
-function ensureMonthIn(months, key, members) {
+function gridMemberFromCol(col) {
+  const gridIdx = colToMemberIdx(col);
+  if (gridIdx == null) return null;
+  return getGridMembers(getActiveMonthData())[gridIdx] || null;
+}
+
+function ensureMonthIn(months, key) {
   if (!months[key]) {
-    months[key] = { rows: [], members: createDefaultMonthMembers(members) };
+    months[key] = { rows: [], members: [], rosterNames: [], rosterConfigured: false };
   }
   if (!Array.isArray(months[key].rows)) months[key].rows = [];
-  if (!Array.isArray(months[key].members)) months[key].members = createDefaultMonthMembers(members);
+  if (!Array.isArray(months[key].members)) months[key].members = [];
+  if (!Array.isArray(months[key].rosterNames)) months[key].rosterNames = [];
   months[key].members.forEach((m) => {
     if (!m.dailyHours) m.dailyHours = {};
     if (!m.dailyCells) m.dailyCells = {};
@@ -389,40 +408,40 @@ function ensureMonthIn(months, key, members) {
   return months[key];
 }
 
-function syncMonthMembersFor(monthData, members) {
-  members.forEach((member) => {
-    if (!monthData.members.some((entry) => entry.name === member.name)) {
-      monthData.members.push({
-        name: member.name,
-        mountedHours: 0,
-        dailyHours: {},
-        dailyCells: {},
-        targetFlag: 0,
-        destinationRegion: "MSK",
-        actualFlag: 0,
-      });
-    }
-  });
-}
-
 function ensureMonth(key) {
-  return ensureMonthIn(state.months, key, state.members);
+  return ensureMonthIn(state.months, key);
 }
 
 function normalizeState(sourceState) {
   const normalized = sourceState;
   if (!normalized.months || typeof normalized.months !== "object") normalized.months = {};
-  if (!Array.isArray(normalized.members)) normalized.members = [];
   if (!Array.isArray(normalized.overviewRows)) normalized.overviewRows = [];
 
-  const members = normalized.members;
-  MONTHS_2026.forEach(({ key }) => ensureMonthIn(normalized.months, key, members));
+  MONTHS_2026.forEach(({ key }) => ensureMonthIn(normalized.months, key));
   Object.values(normalized.months).forEach((monthData) => {
-    syncMonthMembersFor(monthData, members);
     pruneImplicitDailyRosterCells(monthData);
   });
 
   return normalized;
+}
+
+function recomputeMonthStatsFromRoster(monthData) {
+  const members = getGridMembers(monthData);
+  (monthData.rows || []).forEach((row) => {
+    let hours = 0;
+    let working = 0;
+    members.forEach((member) => {
+      const h = Number(member.dailyHours?.[row.date] || 0);
+      if (h > 0) {
+        hours += h;
+        working += 1;
+      }
+    });
+    row.monterHours = Math.round(hours * 100) / 100;
+    if (monthData.rosterConfigured) {
+      row.avgPerDay = working ? Math.round((Number(row.montageCount || 0) / working) * 100) / 100 : 0;
+    }
+  });
 }
 
 function getMonthLabel(key) {
@@ -447,22 +466,27 @@ function renderCards() {
     <div class="card"><p>Naplánováno (hod) celkem</p><h3>${fmt(t.naplanovano_celkem || 0)}</h3></div>
     <div class="card"><p>Plnění</p><h3>${fmt((t.plneni || 0) * 100, 1)} %</h3></div>
     <div class="card"><p>Kolik chybí (ks)</p><h3>${fmt(t.kolik_chybi_ks || 0, 2)}</h3></div>
-    <div class="card"><p>Členové týmu</p><h3>${fmt(state.members.length, 0)}</h3></div>
   `;
   }
 
   const monthData = getActiveMonthData();
+  const gridMembers = getGridMembers(monthData);
   const totalMontages = monthData.rows.reduce((acc, row) => acc + Number(row.montageCount || 0), 0);
   const totalHours = monthData.rows.reduce((acc, row) => acc + Number(row.monterHours || 0), 0);
-  const activeCount = monthData.members.reduce((acc, row) => acc + Number(row.actualFlag || 0), 0);
+  let activeDayCount = 0;
+  gridMembers.forEach((member) => {
+    Object.values(member.dailyHours || {}).forEach((h) => {
+      if (Number(h || 0) > 0) activeDayCount += 1;
+    });
+  });
 
   const monthCards = document.getElementById("monthCards");
   if (!monthCards) return;
   monthCards.innerHTML = `
     <div class="card"><p>Montáže za měsíc</p><h3>${fmt(totalMontages, 0)}</h3></div>
     <div class="card"><p>Montéro-hodiny celkem</p><h3>${fmt(totalHours)}</h3></div>
-    <div class="card"><p>Robí skutečnost (součet 1)</p><h3>${fmt(activeCount, 0)}</h3></div>
-    <div class="card"><p>Vybráno celkem</p><h3>${fmt(monthData.rows.reduce((a, r) => a + Number(r.collected || 0), 0))}</h3></div>
+    <div class="card"><p>Skutečnost (dny s montáží)</p><h3>${fmt(activeDayCount, 0)}</h3></div>
+    <div class="card"><p>Technici v mřížce</p><h3>${fmt(gridMembers.length, 0)}</h3></div>
     <div class="card"><p>Průměr montáží / pracovní den</p><h3>${fmt(totalMontages / Math.max(monthData.rows.length, 1), 2)}</h3></div>
   `;
 }
@@ -482,26 +506,89 @@ function createInput(value, onChange, type = "text", step = "", navMeta = null) 
   return input;
 }
 
-function createGridSelect(value, options, onChange, navMeta) {
+function normalizeRegionCode(val) {
+  const code = String(val ?? "").trim();
+  if (!code || code === "—" || code === "-") return "";
+  return code;
+}
+
+/** Text pro Ctrl+C/V + rozbalovací šipka s číselníkem krajů. */
+function createGridRegionSelect(value, onChange, navMeta) {
+  const wrap = document.createElement("div");
+  wrap.className = "region-combo";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.classList.add("grid-nav-input", "grid-nav-region");
+  input.autocomplete = "off";
+  input.spellcheck = false;
+  input.setAttribute("autocapitalize", "off");
+  input.setAttribute("autocorrect", "off");
+  input.dataset.row = String(navMeta.row);
+  input.dataset.col = String(navMeta.col);
+  input.dataset.field = navMeta.field || "region";
+  input.title = "Kraj – Ctrl+C / Ctrl+V, nebo šipka vpravo pro výběr z nabídky";
+  input.placeholder = "—";
+  input.value = normalizeRegionCode(value);
+
   const select = document.createElement("select");
-  select.classList.add("grid-nav-input", "grid-nav-select");
-  select.dataset.row = String(navMeta.row);
-  select.dataset.col = String(navMeta.col);
-  select.dataset.field = navMeta.field || "";
+  select.className = "region-combo__picker";
+  select.tabIndex = -1;
+  select.title = "Vybrat kraj z nabídky";
+  select.setAttribute("aria-label", "Vybrat kraj");
+
   const emptyOption = document.createElement("option");
   emptyOption.value = "";
   emptyOption.textContent = "—";
-  if (value === "") emptyOption.selected = true;
   select.append(emptyOption);
-  options.forEach((code) => {
+  REGION_CODES.forEach((code) => {
     const option = document.createElement("option");
     option.value = code;
     option.textContent = code;
-    if (value === code) option.selected = true;
     select.append(option);
   });
-  select.addEventListener("change", () => onChange(select.value));
-  return select;
+
+  const normalized = normalizeRegionCode(value);
+  if (normalized && !REGION_CODES.includes(normalized)) {
+    const custom = document.createElement("option");
+    custom.value = normalized;
+    custom.textContent = normalized;
+    select.append(custom);
+  }
+  select.value = REGION_CODES.includes(normalized) || normalized === "" ? normalized : normalized;
+
+  const commit = (raw) => {
+    const next = normalizeRegionCode(raw);
+    input.value = next;
+    if (REGION_CODES.includes(next) || next === "") {
+      select.value = next;
+    } else if (![...select.options].some((o) => o.value === next)) {
+      const custom = document.createElement("option");
+      custom.value = next;
+      custom.textContent = next;
+      select.append(custom);
+      select.value = next;
+    } else {
+      select.value = next;
+    }
+    applyRegionValue(next, navMeta.row, navMeta.col);
+  };
+
+  input.addEventListener("change", () => commit(input.value));
+  input.addEventListener("blur", () => commit(input.value));
+  select.addEventListener("change", () => {
+    commit(select.value);
+    input.focus();
+    if (input.select) input.select();
+  });
+
+  wrap.append(input, select);
+  return wrap;
+}
+
+function commitGridNavInput(el) {
+  if (!el || !el.matches?.(".grid-nav-input")) return;
+  el.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
 function focusGridCell(row, col) {
@@ -509,9 +596,64 @@ function focusGridCell(row, col) {
     `#monthGridTable .grid-nav-input[data-row="${row}"][data-col="${col}"]`,
   );
   if (el) {
-    el.focus();
+    el.focus({ preventScroll: true });
+    el.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
     if (el.select) el.select();
+    updateMonthGridScrollUi();
   }
+}
+
+function getMonthGridScrollStep() {
+  const wrap = document.getElementById("monthGridWrap");
+  if (!wrap) return 280;
+  const memberHead = wrap.querySelector(".month-grid-member-head");
+  const memberWidth = memberHead?.getBoundingClientRect().width || 220;
+  return Math.max(180, Math.round(memberWidth * 0.9));
+}
+
+function updateMonthGridScrollUi() {
+  const wrap = document.getElementById("monthGridWrap");
+  const shell = document.getElementById("monthGridShell");
+  const leftBtn = document.getElementById("monthGridScrollLeft");
+  const rightBtn = document.getElementById("monthGridScrollRight");
+  const hint = document.getElementById("monthGridScrollHint");
+  if (!wrap || !shell) return;
+
+  const maxScroll = Math.max(0, wrap.scrollWidth - wrap.clientWidth);
+  const canScroll = maxScroll > 8;
+  const atStart = wrap.scrollLeft <= 4;
+  const atEnd = wrap.scrollLeft >= maxScroll - 4;
+
+  shell.classList.toggle("is-scrollable", canScroll);
+  shell.classList.toggle("can-scroll-left", canScroll && !atStart);
+  shell.classList.toggle("can-scroll-right", canScroll && !atEnd);
+
+  if (leftBtn) leftBtn.disabled = !canScroll || atStart;
+  if (rightBtn) rightBtn.disabled = !canScroll || atEnd;
+  if (hint) {
+    hint.textContent = canScroll
+      ? "Posouvejte mezi jmény montérů ← →"
+      : "Všichni montéři jsou vidět";
+  }
+}
+
+function scrollMonthGridBy(direction) {
+  const wrap = document.getElementById("monthGridWrap");
+  if (!wrap) return;
+  wrap.scrollBy({ left: direction * getMonthGridScrollStep(), behavior: "smooth" });
+}
+
+function setupMonthGridScroll() {
+  const wrap = document.getElementById("monthGridWrap");
+  const leftBtn = document.getElementById("monthGridScrollLeft");
+  const rightBtn = document.getElementById("monthGridScrollRight");
+  if (!wrap || wrap.dataset.scrollBound) return;
+  wrap.dataset.scrollBound = "1";
+
+  wrap.addEventListener("scroll", () => updateMonthGridScrollUi(), { passive: true });
+  leftBtn?.addEventListener("click", () => scrollMonthGridBy(-1));
+  rightBtn?.addEventListener("click", () => scrollMonthGridBy(1));
+  window.addEventListener("resize", () => updateMonthGridScrollUi());
 }
 
 function handleGridArrowKey(e) {
@@ -521,23 +663,27 @@ function handleGridArrowKey(e) {
   const col = Number(el.dataset.col);
   const monthData = getActiveMonthData();
   const maxRow = monthData.rows.length;
-  const memberCount = monthData.members.length;
-  const maxMemberCol = MONTH_LEFT_COLS + memberCount * MEMBER_FIELD_COUNT - 1;
+  const memberCount = getGridMembers(monthData).length;
 
-  if (e.key === "ArrowDown" && row < maxRow) {
+  const move = (nextRow, nextCol) => {
+    commitGridNavInput(el);
+    focusGridCell(nextRow, nextCol);
+  };
+
+  if (e.key === "ArrowDown" && row < maxRow - 1) {
     e.preventDefault();
-    focusGridCell(row + 1, col);
+    move(row + 1, col);
     return;
   }
   if (e.key === "ArrowUp" && row > 0) {
     e.preventDefault();
-    focusGridCell(row - 1, col);
+    move(row - 1, col);
     return;
   }
   if (e.key === "ArrowRight") {
     e.preventDefault();
     if (col < MONTH_LEFT_COLS - 1) {
-      focusGridCell(row, col + 1);
+      move(row, col + 1);
       return;
     }
     if (col >= MONTH_LEFT_COLS) {
@@ -545,16 +691,16 @@ function handleGridArrowKey(e) {
       const fieldIdx = rel % MEMBER_FIELD_COUNT;
       const memberIdx = Math.floor(rel / MEMBER_FIELD_COUNT);
       if (fieldIdx === 0 && memberIdx + 1 < memberCount) {
-        focusGridCell(row, MONTH_LEFT_COLS + (memberIdx + 1) * MEMBER_FIELD_COUNT);
+        move(row, MONTH_LEFT_COLS + (memberIdx + 1) * MEMBER_FIELD_COUNT);
       } else if (fieldIdx < MEMBER_FIELD_COUNT - 1) {
-        focusGridCell(row, col + 1);
+        move(row, col + 1);
       } else if (memberIdx + 1 < memberCount) {
-        focusGridCell(row, MONTH_LEFT_COLS + (memberIdx + 1) * MEMBER_FIELD_COUNT);
+        move(row, MONTH_LEFT_COLS + (memberIdx + 1) * MEMBER_FIELD_COUNT);
       }
       return;
     }
     if (memberCount > 0) {
-      focusGridCell(row, MONTH_LEFT_COLS);
+      move(row, MONTH_LEFT_COLS);
     }
     return;
   }
@@ -565,18 +711,179 @@ function handleGridArrowKey(e) {
       const fieldIdx = rel % MEMBER_FIELD_COUNT;
       const memberIdx = Math.floor(rel / MEMBER_FIELD_COUNT);
       if (fieldIdx === 0 && memberIdx > 0) {
-        focusGridCell(row, MONTH_LEFT_COLS + (memberIdx - 1) * MEMBER_FIELD_COUNT);
+        move(row, MONTH_LEFT_COLS + (memberIdx - 1) * MEMBER_FIELD_COUNT);
       } else {
-        focusGridCell(row, col - 1);
+        move(row, col - 1);
       }
       return;
     }
     if (col === MONTH_LEFT_COLS) {
-      focusGridCell(row, MONTH_LEFT_COLS - 1);
+      move(row, MONTH_LEFT_COLS - 1);
       return;
     }
-    if (col > 0) focusGridCell(row, col - 1);
+    if (col > 0) move(row, col - 1);
   }
+}
+
+function regionCellKey(row, col) {
+  return `${row}:${col}`;
+}
+
+function colToMemberIdx(col) {
+  if (col < MONTH_LEFT_COLS) return null;
+  const rel = col - MONTH_LEFT_COLS;
+  if (rel % MEMBER_FIELD_COUNT !== 2) return null;
+  return Math.floor(rel / MEMBER_FIELD_COUNT);
+}
+
+function regionColForMember(memberIdx) {
+  return MONTH_LEFT_COLS + memberIdx * MEMBER_FIELD_COUNT + 2;
+}
+
+function selectRegionRange(r1, m1, r2, m2) {
+  gridRegionSelection.clear();
+  const rMin = Math.min(r1, r2);
+  const rMax = Math.max(r1, r2);
+  const mMin = Math.min(m1, m2);
+  const mMax = Math.max(m1, m2);
+  for (let r = rMin; r <= rMax; r += 1) {
+    for (let m = mMin; m <= mMax; m += 1) {
+      gridRegionSelection.add(regionCellKey(r, regionColForMember(m)));
+    }
+  }
+}
+
+function toggleRegionCell(row, col) {
+  const key = regionCellKey(row, col);
+  if (gridRegionSelection.has(key)) gridRegionSelection.delete(key);
+  else gridRegionSelection.add(key);
+}
+
+function clearGridRegionSelection() {
+  gridRegionSelection.clear();
+  gridRegionAnchor = null;
+  gridRegionDragging = false;
+  updateGridRegionSelectionUi();
+}
+
+function updateGridRegionSelectionUi() {
+  document.querySelectorAll("#monthGridBody td.month-grid-col-kraj").forEach((td) => {
+    const row = Number(td.dataset.row);
+    const col = Number(td.dataset.col);
+    td.classList.toggle("is-region-selected", gridRegionSelection.has(regionCellKey(row, col)));
+  });
+  const hint = document.getElementById("gridRegionSelectionHint");
+  if (hint) {
+    const n = gridRegionSelection.size;
+    hint.textContent = n > 0 ? `Označeno buněk kraj: ${n}` : "";
+  }
+}
+
+function applyRegionValue(val, sourceRow, sourceCol) {
+  const sourceKey = regionCellKey(sourceRow, sourceCol);
+  const keys = gridRegionSelection.size > 0
+    ? [...gridRegionSelection]
+    : [sourceKey];
+  const monthData = getActiveMonthData();
+  keys.forEach((key) => {
+    const [rowIdx, col] = key.split(":").map(Number);
+    const date = monthData.rows[rowIdx]?.date;
+    const member = gridMemberFromCol(col);
+    if (!date || !member) return;
+    setMemberDayFieldForMember(member, date, "destinationRegion", val);
+  });
+  saveState();
+  scheduleSaveMesicZapis();
+  if (overviewMonthKey === activeMonthKey) fetchPrehledFromApi();
+  renderMonthGrid();
+}
+
+function regionValueAt(row, col) {
+  const monthData = getActiveMonthData();
+  const date = monthData.rows[row]?.date;
+  const member = gridMemberFromCol(col);
+  if (!date || !member) return "";
+  return normalizeRegionCode(getMemberDayField(member, date, "destinationRegion"));
+}
+
+function fillSelectedRegionsFromAnchor() {
+  if (gridRegionSelection.size < 2 || !gridRegionAnchor) return false;
+  const col = regionColForMember(gridRegionAnchor.memberIdx);
+  const val = regionValueAt(gridRegionAnchor.row, col);
+  applyRegionValue(val, gridRegionAnchor.row, col);
+  return true;
+}
+
+function handleRegionCellMouseDown(e) {
+  const td = e.target.closest("td.month-grid-col-kraj");
+  if (!td || e.button !== 0) return;
+  const row = Number(td.dataset.row);
+  const col = Number(td.dataset.col);
+  const memberIdx = colToMemberIdx(col);
+  if (memberIdx == null) return;
+
+  // Nechat otevřít rozbalovací nabídku krajů
+  if (e.target.closest(".region-combo__picker")) return;
+
+  const onInput = e.target.closest(".grid-nav-region");
+  if (onInput && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+    if (!gridRegionSelection.has(regionCellKey(row, col))) {
+      gridRegionSelection.clear();
+      gridRegionSelection.add(regionCellKey(row, col));
+      gridRegionAnchor = { row, memberIdx };
+      updateGridRegionSelectionUi();
+    }
+    return;
+  }
+
+  e.preventDefault();
+  if (e.shiftKey && gridRegionAnchor) {
+    selectRegionRange(gridRegionAnchor.row, gridRegionAnchor.memberIdx, row, memberIdx);
+    updateGridRegionSelectionUi();
+    fillSelectedRegionsFromAnchor();
+    return;
+  } else if (e.ctrlKey || e.metaKey) {
+    toggleRegionCell(row, col);
+    gridRegionAnchor = { row: gridRegionAnchor?.row ?? row, memberIdx: gridRegionAnchor?.memberIdx ?? memberIdx };
+  } else {
+    gridRegionSelection.clear();
+    gridRegionSelection.add(regionCellKey(row, col));
+    gridRegionAnchor = { row, memberIdx };
+    gridRegionDragging = true;
+  }
+  updateGridRegionSelectionUi();
+}
+
+function handleRegionCellMouseEnter(e) {
+  if (!gridRegionDragging || !gridRegionAnchor) return;
+  const td = e.target.closest("td.month-grid-col-kraj");
+  if (!td) return;
+  const row = Number(td.dataset.row);
+  const col = Number(td.dataset.col);
+  const memberIdx = colToMemberIdx(col);
+  if (memberIdx == null) return;
+  selectRegionRange(gridRegionAnchor.row, gridRegionAnchor.memberIdx, row, memberIdx);
+  updateGridRegionSelectionUi();
+}
+
+function setupGridRegionSelection() {
+  const body = document.getElementById("monthGridBody");
+  if (!body || body.dataset.regionSelectBound) return;
+  body.dataset.regionSelectBound = "1";
+  body.addEventListener("mousedown", handleRegionCellMouseDown);
+  body.addEventListener("mouseover", handleRegionCellMouseEnter);
+  document.addEventListener("mouseup", () => {
+    const shouldFill = gridRegionDragging && gridRegionSelection.size > 1 && gridRegionAnchor;
+    gridRegionDragging = false;
+    if (shouldFill) fillSelectedRegionsFromAnchor();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") clearGridRegionSelection();
+    if ((e.ctrlKey || e.metaKey) && (e.key === "d" || e.key === "D") && gridRegionSelection.size > 1) {
+      e.preventDefault();
+      fillSelectedRegionsFromAnchor();
+    }
+  });
 }
 
 function setupGridNavigation() {
@@ -761,6 +1068,7 @@ async function persistSkupinaObdobi(skupina, od, do_) {
         skupina: skupina.nazev,
         lokalita: lok,
         objednano_ks: row?.objednano_ks || 0,
+        celkem_zakazek: row?.celkem_zakazek || 0,
         posunout_vyrobu: row?.posunout_vyrobu || "NE",
       }),
     });
@@ -920,6 +1228,7 @@ function renderOverview() {
     tr.append(plTd);
 
     appendCell(tr, row.kolik_chybi_ks != null ? fmt(row.kolik_chybi_ks, 2) : "—");
+    appendCell(tr, createInput(row.celkem_zakazek, (val) => updatePrehledRow(idx, "celkem_zakazek", Number(val)), "number", "1"));
     appendCell(tr, createInput(row.objednano_ks, (val) => updatePrehledRow(idx, "objednano_ks", Number(val)), "number", "1"));
     appendCell(tr, row.lze_objednat_ks != null ? fmt(row.lze_objednat_ks, 2) : "—");
 
@@ -944,7 +1253,7 @@ function getRosterPayload() {
   return monthData.members.map((m) => ({
     jmeno: m.name,
     target_flag: Number(m.targetFlag || 0),
-    destination_region: m.destinationRegion || "MSK",
+    destination_region: m.destinationRegion || "",
   }));
 }
 
@@ -975,7 +1284,7 @@ function pruneImplicitDailyRosterCells(monthData) {
       const autoTarget = hours > 0 ? 1 : Number(member.targetFlag || 0);
       const dest = day.destinationRegion;
       const target = day.targetFlag;
-      const implicitDest = !hasDest || dest === "MSK";
+      const implicitDest = !hasDest || dest === "";
       const implicitTarget = !hasTarget || target === "" || Number(target) === autoTarget;
       if (implicitDest && implicitTarget) delete cells[date];
     });
@@ -993,12 +1302,12 @@ function isExplicitDayRosterEdit(member, date) {
   return Number(day.targetFlag) !== autoTarget;
 }
 
-/** Jen ruční úpravy z mřížky – server doplní MSK z Raynetu. */
-function getDailyRosterOverrides() {
-  const monthData = state.months[overviewMonthKey];
+/** Jen ruční úpravy z mřížky – bez ručního kraje zůstane kraj prázdný. */
+function getDailyRosterOverrides(monthKey = activeMonthKey) {
+  const monthData = state.months[monthKey];
   if (!monthData?.members?.length) return [];
   const entries = [];
-  const days = monthData.rows?.length ? monthData.rows.map((r) => r.date) : daysInMonthKey(overviewMonthKey);
+  const days = monthData.rows?.length ? monthData.rows.map((r) => r.date) : daysInMonthKey(monthKey);
   monthData.members.forEach((member, memberIdx) => {
     days.forEach((date) => {
       if (!isExplicitDayRosterEdit(member, date)) return;
@@ -1032,7 +1341,7 @@ function deriveDailyRosterFromMembers(monthData, monthKey = overviewMonthKey) {
         jmeno: member.name,
         datum: date,
         target_flag: 1,
-        destination_region: "MSK",
+        destination_region: "",
       });
     });
   });
@@ -1114,8 +1423,6 @@ async function fetchPrehledFromApi() {
         mesic_key: overviewMonthKey,
         nastaveny_mesic: getNastavenyMesic(),
         nastaveny_rok: getNastavenyRok(),
-        roster: getRosterPayload(),
-        daily_roster: getDailyRosterPayload(),
       }),
     });
     if (!resp.ok) {
@@ -1140,7 +1447,7 @@ async function fetchPrehledFromApi() {
     } else {
       const overlayNote = drOverlay
         ? `, ruční úpravy ${drOverlay}`
-        : " – výchozí MSK z Raynetu";
+        : " – kraj zatím není ručně vyplněný";
       status.textContent = `PostgreSQL: Raynet ${rn} montáží, rozpis ${drDerived}${overlayNote}`;
       status.className = "api-status is-ok";
     }
@@ -1181,6 +1488,7 @@ function computeOverviewLocal() {
     do: row.to,
     lokalita: row.location,
     objednano_ks: row.orderedNotPlanned || 0,
+    celkem_zakazek: row.celkem_zakazek || 0,
     posunout_vyrobu: row.shiftProduction || "NE",
   }))).map((row) => {
     const lok = row.lokalita || row.location;
@@ -1209,9 +1517,12 @@ function computeOverviewLocal() {
       naplanovano_celkem: sched,
       plneni: planR ? sched / planR : 0,
       kolik_chybi_ks: missing,
-      objednano_ks: row.orderedNotPlanned || 0,
-      lze_objednat_ks: missing != null ? missing - (row.orderedNotPlanned || 0) : null,
-      posunout_vyrobu: row.shiftProduction || "NE",
+      objednano_ks: row.objednano_ks ?? row.orderedNotPlanned ?? 0,
+      celkem_zakazek: row.celkem_zakazek || 0,
+      lze_objednat_ks: missing != null
+        ? missing - Number(row.objednano_ks ?? row.orderedNotPlanned ?? 0)
+        : null,
+      posunout_vyrobu: row.posunout_vyrobu || row.shiftProduction || "NE",
     };
   });
   overviewPrehled = {
@@ -1267,31 +1578,47 @@ async function saveKoeficienty() {
 
 function applyMesicData(data) {
   const monthKey = data.mesic_key || activeMonthKey;
-  const monthData = ensureMonthIn(state.months, monthKey, state.members);
-  const existingByDate = new Map((monthData.rows || []).map((r) => [r.date, r]));
+  const monthData = ensureMonthIn(state.months, monthKey);
   const denniByDate = new Map((data.denni || []).map((d) => [d.datum, d]));
   const zapisByDate = new Map((data.zapis_den || []).map((z) => [z.datum, z]));
 
   monthData.rows = daysInMonthKey(monthKey).map((date) => {
     const d = denniByDate.get(date);
-    const old = existingByDate.get(date) || {};
     const z = zapisByDate.get(date);
     return {
       date,
-      monterHours: d?.monter_hours ?? old.monterHours ?? 0,
-      montageCount: d?.montage_count ?? old.montageCount ?? 0,
-      avgPerDay: d?.avg_per_day ?? old.avgPerDay ?? 0,
-      collected: z?.collected ?? old.collected ?? 0,
-      reason: z?.reason ?? old.reason ?? "",
+      monterHours: d?.monter_hours ?? 0,
+      montageCount: d?.montage_count ?? 0,
+      avgPerDay: d?.avg_per_day ?? 0,
+      collected: z?.collected ?? 0,
+      reason: z?.reason ?? "",
     };
   });
 
-  (data.members || []).forEach((m) => {
-    const mem = ensureMemberInMonth(monthData, { name: m.name });
-    mem.dailyHours = m.daily_hours || {};
-    mem.mountedHours = m.mounted_hours ?? sumMemberDailyHours(mem);
-    mem.actualFlag = m.actual_flag;
-  });
+  const savedRosterNames = (data.roster || []).map((r) => r.jmeno).filter(Boolean);
+  const hoursByName = new Map(
+    (data.members || []).map((m) => [normName(m.name), m]),
+  );
+  const byName = new Map();
+
+  const ensureMem = (name) => {
+    const trimmed = String(name || "").trim();
+    const key = normName(trimmed);
+    if (!trimmed || byName.has(key)) return byName.get(key);
+    const api = hoursByName.get(key);
+    const mem = createEmptyMonthMember(trimmed);
+    if (api) {
+      if (api.daily_hours != null && typeof api.daily_hours === "object") {
+        mem.dailyHours = api.daily_hours;
+      }
+      mem.mountedHours = api.mounted_hours ?? 0;
+      mem.actualFlag = api.actual_flag ?? (mem.mountedHours > 0 ? 1 : 0);
+    }
+    byName.set(key, mem);
+    return mem;
+  };
+
+  (data.members || []).forEach((member) => ensureMem(member.name));
 
   const rosterByNameDate = new Map();
   (data.daily_roster || []).forEach((entry) => {
@@ -1306,15 +1633,32 @@ function applyMesicData(data) {
     }
   });
   rosterByNameDate.forEach((entry) => {
-    const mem = ensureMemberInMonth(monthData, { name: entry.jmeno });
+    const mem = ensureMem(entry.jmeno);
+    if (!mem) return;
     if (!mem.dailyCells) mem.dailyCells = {};
-    if (!mem.dailyCells[entry.datum]) mem.dailyCells[entry.datum] = {};
-    mem.dailyCells[entry.datum].targetFlag = entry.target_flag;
-    mem.dailyCells[entry.datum].destinationRegion = entry.destination_region;
+    mem.dailyCells[entry.datum] = {
+      targetFlag: entry.target_flag,
+      destinationRegion: entry.destination_region ?? "",
+    };
   });
 
-  saveState();
-  renderMonthGrid();
+  const rosterNames = deriveRosterNamesFromMesicData(data, byName);
+  monthData.members = Array.from(byName.values());
+  monthData.rosterConfigured = Boolean(data.roster_configured || savedRosterNames.length);
+
+  if (rosterNames.length || data.roster_configured) {
+    setMonthRosterNames(monthKey, rosterNames, { lock: Boolean(data.roster_configured) });
+    monthData.rosterConfigured = Boolean(data.roster_configured);
+  } else {
+    monthData.rosterNames = [];
+    monthData.rosterConfigured = false;
+    monthData.members = [];
+  }
+
+  serverMesicLoaded = true;
+
+  renderMonthRoster();
+  if (monthKey === activeMonthKey) renderMonthGrid();
   renderCards();
 }
 
@@ -1336,14 +1680,14 @@ function scheduleSaveMesicZapis() {
   }, 800);
 }
 
-async function saveMesicZapisToApi() {
+async function saveMesicZapisToApi(monthKey = activeMonthKey) {
   await apiFetch(`/api/mesic-zapis`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      mesic_key: overviewMonthKey,
-      daily_roster: getDailyRosterPayload(),
-      zapis_den: getZapisDenPayload(),
+      mesic_key: monthKey,
+      daily_roster: getDailyRosterOverrides(monthKey),
+      zapis_den: [],
     }),
   });
 }
@@ -1382,6 +1726,7 @@ async function syncRaynetFromApi(statusEl, onDone) {
 async function fetchMesicFromApi(monthKey = activeMonthKey) {
   const status = document.getElementById("mesicApiStatus");
   if (!status) return;
+  const fetchSeq = ++mesicFetchSeq;
   status.textContent = "Načítám měsíc z PostgreSQL…";
   status.className = "api-status";
   showMonthGridError("");
@@ -1390,19 +1735,25 @@ async function fetchMesicFromApi(monthKey = activeMonthKey) {
     const resp = await apiFetch(`/api/mesic-data`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mesic_key: monthKey, members: [] }),
+      body: JSON.stringify({
+        mesic_key: monthKey,
+        // Prázdné = server bere jen DB + Raynet (stejné pro všechny PC)
+        members: [],
+      }),
     });
     if (!resp.ok) {
       const err = await resp.json();
       throw new Error(err.error || resp.statusText);
     }
     const data = await resp.json();
+    if (fetchSeq !== mesicFetchSeq) return;
     if (monthKey === activeMonthKey) {
       applyMesicData(data);
       status.textContent = `Načteno z PostgreSQL (${data.denni?.length || 0} dní, ${data.members?.length || 0} montérů)`;
       status.className = "api-status is-ok";
     }
   } catch (e) {
+    if (fetchSeq !== mesicFetchSeq) return;
     status.textContent = `PostgreSQL nedostupné (${e.message})`;
     status.className = "api-status is-error";
   }
@@ -1425,7 +1776,7 @@ async function updatePrehledRow(idx, key, value) {
   const row = overviewPrehled.rows[idx];
   if (!row) return;
   row[key] = value;
-  if (!["objednano_ks", "posunout_vyrobu"].includes(key)) return;
+  if (!["objednano_ks", "celkem_zakazek", "posunout_vyrobu"].includes(key)) return;
   if (row.id) {
     try {
       await apiFetch(`/api/prehled-obdobi`, {
@@ -1438,6 +1789,7 @@ async function updatePrehledRow(idx, key, value) {
           skupina: row.skupina,
           lokalita: row.lokalita,
           objednano_ks: row.objednano_ks,
+          celkem_zakazek: row.celkem_zakazek,
           posunout_vyrobu: row.posunout_vyrobu,
         }),
       });
@@ -1448,33 +1800,6 @@ async function updatePrehledRow(idx, key, value) {
   }
 }
 
-function renderMembers() {
-  const membersList = document.getElementById("membersList");
-  membersList.innerHTML = "";
-  state.members.forEach((member, idx) => {
-    const div = document.createElement("div");
-    div.className = "member-card";
-    div.innerHTML = `<h4>${member.name}</h4><p>${member.availability || "Bez termínu"}</p>`;
-
-    const remove = document.createElement("button");
-    remove.className = "secondary-btn";
-    remove.textContent = "Odebrat";
-    remove.style.marginTop = "0.45rem";
-    remove.addEventListener("click", () => {
-      const removed = state.members[idx];
-      state.members.splice(idx, 1);
-      Object.values(state.months).forEach((monthData) => {
-        const memberIdx = monthData.members.findIndex((entry) => entry.name === removed.name);
-        if (memberIdx >= 0) monthData.members.splice(memberIdx, 1);
-      });
-      renderMonthMembers();
-      persistAndRender();
-    });
-    div.append(remove);
-    membersList.append(div);
-  });
-}
-
 function formatGridDate(iso) {
   if (!iso) return "";
   const [y, m, d] = iso.split("-");
@@ -1482,6 +1807,7 @@ function formatGridDate(iso) {
 }
 
 function renderMonthGrid() {
+  const renderToken = ++monthGridRenderToken;
   try {
     showMonthGridError("");
     const monthData = getActiveMonthData();
@@ -1501,63 +1827,43 @@ function renderMonthGrid() {
 
     ensureMonthRowsComplete(monthData, activeMonthKey);
     const members = getGridMembers(monthData);
-    head.innerHTML = "";
-    body.innerHTML = "";
-    foot.innerHTML = "";
 
-  const headRow1 = document.createElement("tr");
-  const leftTitles = ["Datum", "Montéro-hodiny", "Kolik vybral", "Počet montáží", "Průměr/den", "Důvod"];
-  leftTitles.forEach((title, i) => {
-    const th = document.createElement("th");
-    th.textContent = title;
-    th.className = i === 0 ? "sticky-left" : i === 1 ? "sticky-left-2" : "";
-    th.rowSpan = 2;
-    headRow1.append(th);
-  });
-  const subColClasses = ["month-grid-col-hours", "month-grid-col-target", "month-grid-col-kraj", "month-grid-col-actual"];
-  members.forEach((member) => {
-    const stored = ensureMemberInMonth(monthData, member);
-    const realIdx = monthData.members.indexOf(stored);
-    const th = document.createElement("th");
-    th.colSpan = MEMBER_FIELD_COUNT;
-    th.className = "month-grid-member-head";
-
-    const wrap = buildMemberHead(member, realIdx);
-    th.append(wrap);
-    headRow1.append(th);
-  });
-  head.append(headRow1);
-
-  const headRow2 = document.createElement("tr");
-  const subLabels = ["hodiny", "target", "kraj", "skutečnost"];
-  members.forEach(() => {
-    subLabels.forEach((label, i) => {
+    const headRow1 = document.createElement("tr");
+    const leftTitles = ["Datum", "Montéro-hodiny", "Počet montáží", "Průměr/den"];
+    leftTitles.forEach((title, i) => {
       const th = document.createElement("th");
-      th.textContent = label;
-      th.className = `month-grid-member-sub ${subColClasses[i]}${i === 0 ? " month-grid-member-block-start" : ""}`;
-      headRow2.append(th);
+      th.textContent = title;
+      th.className = i === 0 ? "sticky-left" : i === 1 ? "sticky-left-2" : "";
+      th.rowSpan = 2;
+      headRow1.append(th);
     });
-  });
-  head.append(headRow2);
+    const subColClasses = ["month-grid-col-hours", "month-grid-col-target", "month-grid-col-kraj", "month-grid-col-actual"];
+    members.forEach((member) => {
+      const stored = ensureMemberInMonth(monthData, member);
+      const realIdx = monthData.members.indexOf(stored);
+      const th = document.createElement("th");
+      th.colSpan = MEMBER_FIELD_COUNT;
+      th.className = "month-grid-member-head";
 
-  head.querySelectorAll("[data-member-name]").forEach((cb) => {
-    cb.addEventListener("change", () => {
-      toggleMemberCopySelection(cb.dataset.memberName, cb.checked);
+      const wrap = buildMemberHead(member, realIdx);
+      th.append(wrap);
+      headRow1.append(th);
     });
-  });
-  head.querySelectorAll("[data-copy-source]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      copyTargetFrom(
-        Number(btn.dataset.copySource),
-        btn.dataset.copyMode,
-        btn.dataset.copyFields,
-      );
-    });
-  });
 
-  monthData.rows.forEach((row, rowIdx) => {
+    const headRow2 = document.createElement("tr");
+    const subLabels = ["hodiny", "target", "kraj", "skutečnost"];
+    members.forEach(() => {
+      subLabels.forEach((label, i) => {
+        const th = document.createElement("th");
+        th.textContent = label;
+        th.className = `month-grid-member-sub ${subColClasses[i]}${i === 0 ? " month-grid-member-block-start" : ""}`;
+        headRow2.append(th);
+      });
+    });
+
+    const bodyRows = [];
+    monthData.rows.forEach((row, rowIdx) => {
     const tr = document.createElement("tr");
-    const reasonClass = row.reason ? "warn" : "ok";
 
     const tdDate = document.createElement("td");
     tdDate.className = "sticky-left";
@@ -1569,16 +1875,6 @@ function renderMonthGrid() {
     tdHours.textContent = fmt(row.monterHours);
     tr.append(tdHours);
 
-    const tdCollected = document.createElement("td");
-    tdCollected.append(
-      createInput(row.collected, (val) => updateMonthRow(rowIdx, "collected", Number(val)), "number", "0.1", {
-        row: rowIdx,
-        col: 2,
-        field: "collected",
-      }),
-    );
-    tr.append(tdCollected);
-
     const tdMont = document.createElement("td");
     tdMont.className = "koef-readonly";
     tdMont.textContent = fmt(row.montageCount, 0);
@@ -1589,29 +1885,18 @@ function renderMonthGrid() {
     tdAvg.textContent = fmt(row.avgPerDay, 2);
     tr.append(tdAvg);
 
-    const tdReason = document.createElement("td");
-    const reasonInput = createInput(row.reason, (val) => updateMonthRow(rowIdx, "reason", val), "text", "", {
-      row: rowIdx,
-      col: 5,
-      field: "reason",
-    });
-    reasonInput.placeholder = row.reason || "OK";
-    reasonInput.classList.add(reasonClass);
-    tdReason.append(reasonInput);
-    tr.append(tdReason);
-
     members.forEach((member, mIdx) => {
       const stored = ensureMemberInMonth(monthData, member);
       const realIdx = monthData.members.indexOf(stored);
       const baseCol = MONTH_LEFT_COLS + mIdx * MEMBER_FIELD_COUNT;
-      const hours = member.dailyHours?.[row.date];
+      const hours = memberHoursOnDay(stored, row.date);
       const tdH = document.createElement("td");
       tdH.className = "month-grid-hours month-grid-col-hours month-grid-member-block-start";
       const hourInput = document.createElement("input");
       hourInput.readOnly = true;
       hourInput.tabIndex = 0;
       hourInput.className = "grid-nav-input month-grid-hours-input";
-      hourInput.value = hours ? fmt(hours) : "";
+      hourInput.value = hours > 0 ? fmt(hours) : "";
       hourInput.title = "Hodiny z PostgreSQL – šipka vpravo = další montér";
       hourInput.dataset.row = String(rowIdx);
       hourInput.dataset.col = String(baseCol);
@@ -1623,7 +1908,7 @@ function renderMonthGrid() {
       tdTarget.className = "month-grid-col-target";
       tdTarget.append(
         createInput(
-          getMemberDayField(member, row.date, "targetFlag"),
+          getMemberDayField(stored, row.date, "targetFlag"),
           (val) => {
             setMemberDayField(realIdx, row.date, "targetFlag", Number(val));
             saveState();
@@ -1638,41 +1923,34 @@ function renderMonthGrid() {
 
       const tdReg = document.createElement("td");
       tdReg.className = "month-grid-col-kraj";
+      tdReg.dataset.row = String(rowIdx);
+      tdReg.dataset.col = String(baseCol + 2);
+      if (gridRegionSelection.has(regionCellKey(rowIdx, baseCol + 2))) {
+        tdReg.classList.add("is-region-selected");
+      }
       tdReg.append(
-        createGridSelect(
-          getMemberDayField(member, row.date, "destinationRegion"),
-          REGION_CODES,
-          (val) => {
-            setMemberDayField(realIdx, row.date, "destinationRegion", val);
-            saveState();
-            scheduleSaveMesicZapis();
-          },
+        createGridRegionSelect(
+          getMemberDayField(stored, row.date, "destinationRegion"),
+          () => {},
           { row: rowIdx, col: baseCol + 2, field: "region" },
         ),
       );
       tr.append(tdReg);
 
       const tdAct = document.createElement("td");
-      tdAct.className = "month-grid-col-actual";
-      tdAct.append(
-        createInput(
-          getMemberDayField(member, row.date, "actualFlag"),
-          (val) => {
-            setMemberDayField(realIdx, row.date, "actualFlag", Number(val));
-            saveState();
-          },
-          "number",
-          "1",
-          { row: rowIdx, col: baseCol + 3, field: "actual" },
-        ),
-      );
+      const actual = getMemberDayActual(stored, row.date);
+      tdAct.className = `month-grid-col-actual koef-readonly${actual === 1 ? " is-at-work" : ""}`;
+      tdAct.textContent = String(actual);
+      tdAct.title = actual === 1
+        ? "Skutečnost = 1 (technik má montérohodiny)"
+        : "Skutečnost = 0 (bez montérohodin)";
       tr.append(tdAct);
     });
 
-    body.append(tr);
-  });
+    bodyRows.push(tr);
+    });
 
-  const totalRow = document.createElement("tr");
+    const totalRow = document.createElement("tr");
   totalRow.className = "month-grid-total-row";
   const tdLabel = document.createElement("td");
   tdLabel.className = "sticky-left";
@@ -1684,20 +1962,16 @@ function renderMonthGrid() {
   tdSumHours.textContent = fmt(monthData.rows.reduce((a, r) => a + Number(r.monterHours || 0), 0));
   totalRow.append(tdSumHours);
 
-  const tdSumColl = document.createElement("td");
-  tdSumColl.textContent = fmt(monthData.rows.reduce((a, r) => a + Number(r.collected || 0), 0));
-  totalRow.append(tdSumColl);
-
   const tdSumMont = document.createElement("td");
   tdSumMont.textContent = fmt(monthData.rows.reduce((a, r) => a + Number(r.montageCount || 0), 0), 0);
   totalRow.append(tdSumMont);
 
   totalRow.append(document.createElement("td"));
-  totalRow.append(document.createElement("td"));
 
   members.forEach((member) => {
-    const sum = member.mountedHours ?? sumMemberDailyHours(member);
-    member.mountedHours = sum;
+    const stored = ensureMemberInMonth(monthData, member);
+    const sum = stored.mountedHours ?? sumMemberDailyHours(stored);
+    stored.mountedHours = sum;
     const tdH = document.createElement("td");
     tdH.className = "month-grid-hours month-grid-col-hours month-grid-member-block-start";
     tdH.textContent = fmt(sum);
@@ -1713,8 +1987,31 @@ function renderMonthGrid() {
     totalRow.append(tdA);
   });
 
-  foot.append(totalRow);
+    if (renderToken !== monthGridRenderToken) return;
+
+    head.replaceChildren(headRow1, headRow2);
+    body.replaceChildren(...bodyRows);
+    foot.replaceChildren(totalRow);
+
+    head.querySelectorAll("[data-member-name]").forEach((cb) => {
+      cb.addEventListener("change", () => {
+        toggleMemberCopySelection(cb.dataset.memberName, cb.checked);
+      });
+    });
+    head.querySelectorAll("[data-copy-source]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        copyTargetFrom(
+          Number(btn.dataset.copySource),
+          btn.dataset.copyMode,
+          btn.dataset.copyFields,
+        );
+      });
+    });
+
     setupGridNavigation();
+    setupGridRegionSelection();
+    setupMonthGridScroll();
+    requestAnimationFrame(() => updateMonthGridScrollUi());
   } catch (err) {
     console.error("renderMonthGrid:", err);
     showMonthGridError(`Chyba vykreslení mřížky: ${err.message}`);
@@ -1817,6 +2114,7 @@ function toggleMemberCopySelection(name, checked) {
 
 function copyTargetFrom(sourceIdx, mode, fields = getCopyFieldsMode()) {
   const monthData = getActiveMonthData();
+  const gridMembers = getGridMembers(monthData);
   const source = monthData.members[sourceIdx];
   if (!source) return;
 
@@ -1824,8 +2122,8 @@ function copyTargetFrom(sourceIdx, mode, fields = getCopyFieldsMode()) {
   const copyRegion = fields === "both" || fields === "region";
   let count = 0;
 
-  monthData.members.forEach((member, idx) => {
-    if (idx === sourceIdx) return;
+  gridMembers.forEach((member) => {
+    if (normName(member.name) === normName(source.name)) return;
     const isSelected = mode === "all" || memberCopySelection.has(normName(member.name));
     if (!isSelected) return;
 
@@ -1862,7 +2160,114 @@ function pruneMemberCopySelection() {
   });
 }
 
+function populateMonthRosterSelect() {
+  const select = document.getElementById("monthRosterSelect");
+  if (!select) return;
+  const current = new Set(getMonthRosterNames().map(normName));
+  select.innerHTML = '<option value="">— vyberte montéra —</option>';
+  MONTERI_SEZNAM.forEach((name) => {
+    if (current.has(normName(name))) return;
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    select.append(opt);
+  });
+}
+
+function renderMonthRoster() {
+  const list = document.getElementById("monthRosterList");
+  const title = document.getElementById("monthRosterTitle");
+  if (!list) return;
+  const monthLabel = getMonthLabel(activeMonthKey);
+  if (title) title.textContent = `Montéři v ${monthLabel}`;
+  list.innerHTML = "";
+  const names = getMonthRosterNames();
+  if (!names.length) {
+    const empty = document.createElement("p");
+    empty.className = "copy-target-hint";
+    empty.textContent = "Zatím žádní montéři – přidejte ze seznamu nebo použijte „Výchozí seznam“.";
+    list.append(empty);
+    populateMonthRosterSelect();
+    return;
+  }
+  names.forEach((name, idx) => {
+    const div = document.createElement("div");
+    div.className = "member-card is-roster-item";
+    div.innerHTML = `<h4>${name}</h4><p>Sloupec ${idx + 1} v mřížce</p>`;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "secondary-btn";
+    remove.textContent = "Odebrat";
+    remove.style.marginTop = "0.45rem";
+    remove.addEventListener("click", () => {
+      const next = getMonthRosterNames().filter((n) => normName(n) !== normName(name));
+      setMonthRosterNames(activeMonthKey, next);
+      renderMonthRoster();
+      renderMonthGrid();
+      renderCards();
+      saveMonthRosterToApi(activeMonthKey);
+    });
+    div.append(remove);
+    list.append(div);
+  });
+  populateMonthRosterSelect();
+}
+
+async function saveMonthRosterToApi(monthKey = activeMonthKey) {
+  const names = getMonthRosterNames(monthKey);
+  const status = document.getElementById("mesicApiStatus");
+  try {
+    const resp = await apiFetch("/api/mesic-roster", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mesic_key: monthKey, names }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json();
+      throw new Error(err.error || resp.statusText);
+    }
+    if (status) {
+      status.textContent = `Montéři uloženi (${names.length})`;
+      status.className = "api-status is-ok";
+    }
+    await fetchMesicFromApi(monthKey);
+    return true;
+  } catch (e) {
+    if (status) {
+      status.textContent = `Uložení montérů selhalo (${e.message})`;
+      status.className = "api-status is-error";
+    }
+    return false;
+  }
+}
+
+function setupMonthRosterToolbar() {
+  document.getElementById("monthRosterAddBtn")?.addEventListener("click", () => {
+    const select = document.getElementById("monthRosterSelect");
+    const name = select?.value?.trim();
+    if (!name) return;
+    setMonthRosterNames(activeMonthKey, [...getMonthRosterNames(), name]);
+    renderMonthRoster();
+    renderMonthGrid();
+    renderCards();
+    saveMonthRosterToApi(activeMonthKey);
+    if (select) select.value = "";
+  });
+  document.getElementById("monthRosterDefaultBtn")?.addEventListener("click", () => {
+    setMonthRosterNames(activeMonthKey, [...MONTERI_SEZNAM]);
+    renderMonthRoster();
+    renderMonthGrid();
+    renderCards();
+    saveMonthRosterToApi(activeMonthKey);
+  });
+  document.getElementById("monthRosterSaveBtn")?.addEventListener("click", () => {
+    saveMonthRosterToApi(activeMonthKey);
+  });
+  populateMonthRosterSelect();
+}
+
 function renderMonthMembers() {
+  renderMonthRoster();
   renderMonthGrid();
 }
 
@@ -1888,84 +2293,54 @@ function persistAndRender() {
   renderMonthGrid();
 }
 
+function updateMonthEditorLabel(monthKey = activeMonthKey) {
+  const label = document.getElementById("monthEditorLabel");
+  if (label) label.textContent = `Měsíční zápis – ${getMonthLabel(monthKey)}`;
+}
+
 function buildMonthTabs() {
   const tabsNav = document.getElementById("tabsNav");
+  if (!tabsNav) return;
   MONTHS_2026.forEach(({ key, label }) => {
     const button = document.createElement("button");
+    button.type = "button";
     button.className = "tab";
     button.dataset.tab = "month";
     button.dataset.month = key;
-    button.textContent = label;
+    button.textContent = label.replace(" 2026", "");
+    button.title = label;
     tabsNav.append(button);
   });
 }
 
 function setupTabs() {
-  document.querySelectorAll(".tab").forEach((tabButton) => {
-    tabButton.addEventListener("click", () => {
-      document.querySelectorAll(".tab").forEach((btn) => btn.classList.remove("is-active"));
-      document.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.remove("is-active"));
-      tabButton.classList.add("is-active");
+  const tabsNav = document.getElementById("tabsNav");
+  if (!tabsNav || tabsNav.dataset.tabsBound) return;
+  tabsNav.dataset.tabsBound = "1";
+  tabsNav.addEventListener("click", (event) => {
+    const tabButton = event.target.closest(".tab");
+    if (!tabButton) return;
 
-      const tabId = tabButton.dataset.tab;
-      document.getElementById(tabId).classList.add("is-active");
+    document.querySelectorAll(".tab").forEach((btn) => btn.classList.remove("is-active"));
+    document.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.remove("is-active"));
+    tabButton.classList.add("is-active");
 
-      if (tabId === "month") {
-        activeMonthKey = tabButton.dataset.month;
-        pruneMemberCopySelection();
-        document.getElementById("monthBadge").textContent = getMonthLabel(activeMonthKey);
-        renderMonthGrid();
-        renderCards();
-        fetchMesicFromApi(activeMonthKey);
-      } else {
-        document.getElementById("monthBadge").textContent = "2026";
-      }
-    });
+    const tabId = tabButton.dataset.tab;
+    document.getElementById(tabId)?.classList.add("is-active");
+
+    if (tabId === "month") {
+      const monthKey = tabButton.dataset.month;
+      if (!monthKey) return;
+      activeMonthKey = monthKey;
+      pruneMemberCopySelection();
+      clearGridRegionSelection();
+      document.getElementById("monthBadge").textContent = getMonthLabel(activeMonthKey);
+      updateMonthEditorLabel(activeMonthKey);
+      fetchMesicFromApi(activeMonthKey);
+    } else {
+      document.getElementById("monthBadge").textContent = "2026";
+    }
   });
-}
-
-function wireDialogCancel(dialog, form) {
-  form.querySelector(".dialog-cancel-btn")?.addEventListener("click", () => {
-    dialog.close();
-    form.reset();
-  });
-}
-
-function setupDialogs() {
-  const memberDialog = document.getElementById("memberDialog");
-  const memberForm = document.getElementById("memberForm");
-  const addMemberBtn = document.getElementById("addMemberBtn");
-  if (!memberDialog || !memberForm || !addMemberBtn) return;
-  addMemberBtn.addEventListener("click", () => memberDialog.showModal());
-  wireDialogCancel(memberDialog, memberForm);
-  memberForm.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const data = new FormData(memberForm);
-    const name = String(data.get("name") || "").trim();
-    if (!name) return;
-    state.members.push({
-      name,
-      availability: String(data.get("availability") || "").trim(),
-    });
-    Object.values(state.months).forEach((monthData) => {
-      monthData.members.push({
-        name,
-        mountedHours: 0,
-        dailyHours: {},
-        dailyCells: {},
-        targetFlag: 0,
-        destinationRegion: "MSK",
-        actualFlag: 0,
-      });
-    });
-    saveState();
-    renderMembers();
-    renderMonthMembers();
-    renderCards();
-    memberDialog.close();
-    memberForm.reset();
-  });
-
 }
 
 function setupOverviewToolbar() {
@@ -2020,6 +2395,7 @@ function setupOverviewToolbar() {
 }
 
 function setupMesicToolbar() {
+  updateMonthEditorLabel(activeMonthKey);
   document.getElementById("syncRaynetMesicBtn")?.addEventListener("click", async () => {
     const status = document.getElementById("mesicApiStatus");
     await syncRaynetFromApi(status, () => fetchMesicFromApi(activeMonthKey));
@@ -2039,6 +2415,14 @@ function setupMemberCopyToolbar() {
     memberCopySelection.clear();
     renderMonthMembers();
   });
+  document.getElementById("fillSelectedRegionsBtn")?.addEventListener("click", () => {
+    if (!fillSelectedRegionsFromAnchor()) {
+      alert("Nejdřív nastavte kraj v jedné buňce a označte další buňky (táhnutím nebo Shift+klik).");
+    }
+  });
+  document.getElementById("clearGridRegionSelectionBtn")?.addEventListener("click", () => {
+    clearGridRegionSelection();
+  });
 }
 
 async function loadMesicForOverview() {
@@ -2046,11 +2430,14 @@ async function loadMesicForOverview() {
     const resp = await apiFetch(`/api/mesic-data`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mesic_key: overviewMonthKey, members: [] }),
+      body: JSON.stringify({
+        mesic_key: overviewMonthKey,
+        members: [],
+      }),
     });
     if (resp.ok) applyMesicData(await resp.json());
   } catch {
-    /* localStorage fallback */
+    /* bez API zůstane výchozí stav */
   }
 }
 
@@ -2099,12 +2486,14 @@ async function init() {
     ensureOverviewRowsFromSkupiny();
     buildMonthTabs();
     setupTabs();
-    setupDialogs();
     setupMemberCopyToolbar();
     setupMesicToolbar();
+    setupMonthRosterToolbar();
     setupOverviewToolbar();
     setupGridNavigation();
-    renderMembers();
+    setupGridRegionSelection();
+    setupMonthGridScroll();
+    renderMonthRoster();
     renderCiselnikSkupiny();
     renderKoeficienty();
     await loadMesicForOverview();

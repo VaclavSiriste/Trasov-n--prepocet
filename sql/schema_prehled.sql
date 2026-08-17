@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS prehled_obdobi (
   skupina             TEXT,
   lokalita            TEXT NOT NULL,
   objednano_ks        NUMERIC(10, 2) NOT NULL DEFAULT 0,
+  celkem_zakazek      NUMERIC(10, 2) NOT NULL DEFAULT 0,
   posunout_vyrobu     TEXT NOT NULL DEFAULT 'NE',
   sort_order          SMALLINT NOT NULL DEFAULT 0
 );

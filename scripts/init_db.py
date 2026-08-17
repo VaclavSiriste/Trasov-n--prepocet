@@ -32,6 +32,10 @@ MIGRATIONS = [
     "migrate_mesicni_zapis_den.sql",
     "migrate_rozpis_col_index.sql",
     "migrate_koef_pouze_zname.sql",
+    "migrate_celkem_zakazek.sql",
+    "migrate_tym_monteru.sql",
+    "migrate_mesic_roster_sort.sql",
+    "migrate_mesic_roster_config.sql",
 ]
 
 

@@ -62,8 +62,15 @@ MONTERI_SEZNAM: list[str] = [
     "Jan Perlík",
     "Václav Vála",
     "Tomáš Stoklasa",
-    "Pavel Čejka",
+    "Pavel Čajka",
+    "Karel Kretschmann",
 ]
+
+# Historické / překlepové varianty jmen → kanonické jméno ze seznamu.
+MONTERI_ALIASES: dict[str, str] = {
+    "pavel čejka": "Pavel Čajka",
+}
+
 
 def parse_ucastnici(ucastnici: str | None) -> list[str]:
     if not ucastnici:
@@ -74,6 +81,12 @@ def parse_ucastnici(ucastnici: str | None) -> list[str]:
 def extract_monteri(ucastnici: str | None) -> list[str]:
     """Vrátí montéry v pořadí ze seznamu Podklady (jako Excel sloupec G)."""
     tokens = {normalize_name(t) for t in parse_ucastnici(ucastnici)}
+    # Přemapuj aliasy (např. Čejka → Čajka), ať sedí i starší data z Raynetu.
+    tokens |= {
+        normalize_name(MONTERI_ALIASES[t])
+        for t in tokens
+        if t in MONTERI_ALIASES
+    }
     found: list[str] = []
     for name in MONTERI_SEZNAM:
         if normalize_name(name) in tokens:

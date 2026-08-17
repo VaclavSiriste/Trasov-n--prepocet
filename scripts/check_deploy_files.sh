@@ -23,4 +23,5 @@ if [[ "$missing" -eq 1 ]]; then
   exit 1
 fi
 
-echo "OK – struktura je kompletní. Pushněte celý repozitář: git push -u origin main"
+echo "OK – struktura je kompletní."
+echo "Push na GitHub: ./scripts/deploy_github.sh  (nebo git push -u origin main)"

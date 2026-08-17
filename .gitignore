@@ -1,6 +1,7 @@
 .env
 backups/
 .pgdata/
+Bez názvu/
 __pycache__/
 *.py[cod]
 .DS_Store

@@ -159,10 +159,9 @@ def extract_kraj_from_company(company: dict | None) -> str:
 
 
 def extract_kraj_from_event(item: dict) -> str:
-    """Vrátí kraj z eventu, případně odvodí z města/PSČ."""
+    """Kraj z adresy přímo na události (má přednost před sídlem klienta)."""
     candidates = [
         infer_kraj_from_address(item.get("companyAddress") or {}),
-        extract_kraj_from_company(item.get("company") if isinstance(item.get("company"), dict) else {}),
         infer_kraj_from_address(item.get("address") or {}),
         kraj_from_city(item.get("meetingPlace")),
     ]
@@ -260,11 +259,19 @@ def flatten_main_events(
     rows: list[dict] = []
     company_cache = fetch_company_kraj_map(username, api_key, instance)
     print("  Sestavuji řádky montáží…", flush=True)
+    from_event = 0
+    from_company = 0
     for response in all_responses:
         for item in response.get("data") or []:
             start = item.get("scheduledFrom")
             end = item.get("scheduledTill")
             ts_start = parse_ts(start)
+            kraj_event = extract_kraj_from_event(item)
+            kraj = kraj_event or resolve_company_kraj(item, company_cache)
+            if kraj_event:
+                from_event += 1
+            elif kraj:
+                from_company += 1
             rows.append({
                 "kategorie": (item.get("category") or {}).get("value") or "",
                 "naplanovano_od": ts_start,
@@ -273,7 +280,7 @@ def flatten_main_events(
                 "predmet": item.get("title") or "",
                 "ucastnici": join_participants(item.get("participants")),
                 "misto_setkani": item.get("meetingPlace") or "",
-                "kraj": resolve_company_kraj(item, company_cache),
+                "kraj": kraj,
                 "stitky": join_tags(item.get("tags")),
                 "mesic": ts_start.month if ts_start else None,
                 "rok": ts_start.year if ts_start else None,
@@ -281,7 +288,11 @@ def flatten_main_events(
                 "mesic_datum": ts_start.month if ts_start else None,
             })
     filled = sum(1 for row in rows if _clean_text(row.get("kraj")))
-    print(f"  Události: {len(rows)}, s krajem: {filled}", flush=True)
+    print(
+        f"  Události: {len(rows)}, s krajem: {filled} "
+        f"(z adresy na události: {from_event}, ze sídla klienta: {from_company})",
+        flush=True,
+    )
     return rows
 
 

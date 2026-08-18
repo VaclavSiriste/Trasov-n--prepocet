@@ -4,10 +4,17 @@ from __future__ import annotations
 
 import base64
 import os
+import time as time_mod
 from datetime import datetime, time, timedelta, timezone
 from typing import Any
+from urllib.parse import quote
 
 import requests
+
+_SESSION = requests.Session()
+_ADAPTER = requests.adapters.HTTPAdapter(pool_connections=2, pool_maxsize=2)
+_SESSION.mount("https://", _ADAPTER)
+_SESSION.mount("http://", _ADAPTER)
 
 from kraj_from_address import infer_kraj_from_address, kraj_from_city
 from raynet_derive import enrich_montaze_row
@@ -115,6 +122,28 @@ def raynet_headers(username: str, api_key: str, instance: str) -> dict[str, str]
     }
 
 
+def raynet_get(url: str, headers: dict[str, str], retries: int = 8) -> dict:
+    last_err = "unknown"
+    for attempt in range(retries):
+        try:
+            resp = _SESSION.get(url, headers=headers, timeout=120)
+        except requests.RequestException as exc:
+            last_err = str(exc)
+            wait = min(30, 3 * (attempt + 1))
+            print(f"    Raynet spojení selhalo, čekám {wait}s… ({exc})", flush=True)
+            time_mod.sleep(wait)
+            continue
+        if resp.status_code == 429:
+            wait = min(60, 8 * (attempt + 1))
+            print(f"    Raynet 429 (limit spojení), čekám {wait}s…", flush=True)
+            time_mod.sleep(wait)
+            continue
+        if resp.status_code != 200:
+            raise RuntimeError(f"Raynet API {resp.status_code}: {resp.text[:500]}")
+        return resp.json() or {}
+    raise RuntimeError(f"Raynet API opakovaně selhalo: {last_err}")
+
+
 def call_raynet_api(
     *,
     username: str,
@@ -134,14 +163,7 @@ def call_raynet_api(
         f"&status[NE]={parameters['state']}"
         "&sortColumn=scheduledFrom&sortDirection=DESC"
     )
-    resp = requests.get(
-        url,
-        headers=raynet_headers(username, api_key, instance),
-        timeout=120,
-    )
-    if resp.status_code != 200:
-        raise RuntimeError(f"Raynet API {resp.status_code}: {resp.text[:500]}")
-    return resp.json()
+    return raynet_get(url, raynet_headers(username, api_key, instance))
 
 
 def _clean_text(value: Any) -> str:
@@ -172,29 +194,42 @@ def extract_kraj_from_event(item: dict) -> str:
     return ""
 
 
-def fetch_company_kraj_map(username: str, api_key: str, instance: str) -> dict[int, str]:
-    """Stáhne kraje všech klientů po 1000 – mnohem rychlejší než detail u každé zakázky."""
-    headers = raynet_headers(username, api_key, instance)
+def fetch_company_kraj_map(
+    username: str,
+    api_key: str,
+    instance: str,
+    company_ids: set[int],
+) -> dict[int, str]:
+    """Stáhne kraje jen u klientů, kterým na události kraj chybí."""
     cache: dict[int, str] = {}
-    offset = 0
-    print("  Stahuji kraje klientů…", flush=True)
-    while True:
-        url = f"https://app.raynet.cz/api/v2/company/?offset={offset}&limit=1000"
-        resp = requests.get(url, headers=headers, timeout=120)
-        if resp.status_code != 200:
-            raise RuntimeError(f"Raynet company API {resp.status_code}: {resp.text[:500]}")
-        data = (resp.json() or {}).get("data") or []
-        print(f"    klienti offset={offset}: {len(data)}", flush=True)
+    ids = sorted({int(cid) for cid in company_ids if cid})
+    if not ids:
+        print("  Žádní klienti k doplnění kraje.", flush=True)
+        return cache
+    headers = raynet_headers(username, api_key, instance)
+    chunk_size = 40
+    print(f"  Stahuji kraje {len(ids)} klientů (po {chunk_size})…", flush=True)
+    for start in range(0, len(ids), chunk_size):
+        chunk = ids[start:start + chunk_size]
+        id_list = ",".join(str(cid) for cid in chunk)
+        url = (
+            "https://app.raynet.cz/api/v2/company/"
+            f"?limit=1000&id[IN]={quote(id_list)}"
+        )
+        payload = raynet_get(url, headers)
+        data = payload.get("data") or []
+        print(
+            f"    klienti {start + 1}-{start + len(chunk)}/{len(ids)}: {len(data)}",
+            flush=True,
+        )
         for company in data:
             cid = company.get("id")
             if cid is None:
                 continue
             cache[int(cid)] = extract_kraj_from_company(company)
-        if len(data) < 1000:
-            break
-        offset += 1000
+        time_mod.sleep(0.35)
     filled = sum(1 for val in cache.values() if val)
-    print(f"  Klienti: {len(cache)}, s krajem: {filled}", flush=True)
+    print(f"  Klienti doplněni: {len(cache)}, s krajem: {filled}", flush=True)
     return cache
 
 
@@ -257,12 +292,20 @@ def flatten_main_events(
     instance: str,
 ) -> list[dict]:
     rows: list[dict] = []
-    company_cache = fetch_company_kraj_map(username, api_key, instance)
     print("  Sestavuji řádky montáží…", flush=True)
-    from_event = 0
-    from_company = 0
+    items: list[dict] = []
+    need_ids: set[int] = set()
     for response in all_responses:
         for item in response.get("data") or []:
+            items.append(item)
+            if not extract_kraj_from_event(item):
+                cid = event_company_id(item)
+                if cid:
+                    need_ids.add(int(cid))
+    company_cache = fetch_company_kraj_map(username, api_key, instance, need_ids)
+    from_event = 0
+    from_company = 0
+    for item in items:
             start = item.get("scheduledFrom")
             end = item.get("scheduledTill")
             ts_start = parse_ts(start)

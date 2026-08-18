@@ -9,6 +9,7 @@ from typing import Any
 
 import requests
 
+from kraj_from_address import infer_kraj_from_address, kraj_from_city
 from raynet_derive import enrich_montaze_row
 
 MAIN_PARAMS = {
@@ -151,18 +152,19 @@ def extract_kraj_from_company(company: dict | None) -> str:
     company = company or {}
     for addr_key in ("primaryAddress", "contactAddress"):
         addr = ((company.get(addr_key) or {}).get("address") or {})
-        text = _clean_text(addr.get("province"))
+        text = infer_kraj_from_address(addr)
         if text:
             return text
     return ""
 
 
 def extract_kraj_from_event(item: dict) -> str:
-    """Vrátí kraj přímo z eventu, pokud je v payloadu dostupný."""
+    """Vrátí kraj z eventu, případně odvodí z města/PSČ."""
     candidates = [
-        ((item.get("companyAddress") or {}).get("province")),
+        infer_kraj_from_address(item.get("companyAddress") or {}),
         extract_kraj_from_company(item.get("company") if isinstance(item.get("company"), dict) else {}),
-        ((item.get("address") or {}).get("province")),
+        infer_kraj_from_address(item.get("address") or {}),
+        kraj_from_city(item.get("meetingPlace")),
     ]
     for value in candidates:
         text = _clean_text(value)

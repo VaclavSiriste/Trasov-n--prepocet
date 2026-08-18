@@ -105,6 +105,15 @@ def owner_name(item: dict) -> str:
     return ""
 
 
+def raynet_headers(username: str, api_key: str, instance: str) -> dict[str, str]:
+    auth = base64.b64encode(f"{username}:{api_key}".encode()).decode()
+    return {
+        "Accept": "application/json",
+        "Authorization": f"Basic {auth}",
+        "X-Instance-Name": instance,
+    }
+
+
 def call_raynet_api(
     *,
     username: str,
@@ -124,35 +133,13 @@ def call_raynet_api(
         f"&status[NE]={parameters['state']}"
         "&sortColumn=scheduledFrom&sortDirection=DESC"
     )
-    auth = base64.b64encode(f"{username}:{api_key}".encode()).decode()
-    headers = {
-        "Accept": "application/json",
-        "Authorization": f"Basic {auth}",
-        "X-Instance-Name": instance,
-    }
-    resp = requests.get(url, headers=headers, timeout=120)
+    resp = requests.get(
+        url,
+        headers=raynet_headers(username, api_key, instance),
+        timeout=120,
+    )
     if resp.status_code != 200:
         raise RuntimeError(f"Raynet API {resp.status_code}: {resp.text[:500]}")
-    return resp.json()
-
-
-def call_raynet_company_detail(
-    *,
-    username: str,
-    api_key: str,
-    instance: str,
-    company_id: int,
-) -> dict:
-    url = f"https://app.raynet.cz/api/v2/company/{company_id}/"
-    auth = base64.b64encode(f"{username}:{api_key}".encode()).decode()
-    headers = {
-        "Accept": "application/json",
-        "Authorization": f"Basic {auth}",
-        "X-Instance-Name": instance,
-    }
-    resp = requests.get(url, headers=headers, timeout=120)
-    if resp.status_code != 200:
-        raise RuntimeError(f"Raynet company API {resp.status_code}: {resp.text[:500]}")
     return resp.json()
 
 
@@ -160,12 +147,22 @@ def _clean_text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def extract_kraj_from_company(company: dict | None) -> str:
+    company = company or {}
+    for addr_key in ("primaryAddress", "contactAddress"):
+        addr = ((company.get(addr_key) or {}).get("address") or {})
+        text = _clean_text(addr.get("province"))
+        if text:
+            return text
+    return ""
+
+
 def extract_kraj_from_event(item: dict) -> str:
     """Vrátí kraj přímo z eventu, pokud je v payloadu dostupný."""
     candidates = [
         ((item.get("companyAddress") or {}).get("province")),
-        ((((item.get("company") or {}).get("primaryAddress") or {}).get("address") or {}).get("province")),
-        (((item.get("address") or {}).get("province"))),
+        extract_kraj_from_company(item.get("company") if isinstance(item.get("company"), dict) else {}),
+        ((item.get("address") or {}).get("province")),
     ]
     for value in candidates:
         text = _clean_text(value)
@@ -174,40 +171,55 @@ def extract_kraj_from_event(item: dict) -> str:
     return ""
 
 
-def resolve_company_kraj(
-    *,
-    item: dict,
-    username: str,
-    api_key: str,
-    instance: str,
-    company_cache: dict[int, str],
-) -> str:
+def fetch_company_kraj_map(username: str, api_key: str, instance: str) -> dict[int, str]:
+    """Stáhne kraje všech klientů po 1000 – mnohem rychlejší než detail u každé zakázky."""
+    headers = raynet_headers(username, api_key, instance)
+    cache: dict[int, str] = {}
+    offset = 0
+    print("  Stahuji kraje klientů…", flush=True)
+    while True:
+        url = f"https://app.raynet.cz/api/v2/company/?offset={offset}&limit=1000"
+        resp = requests.get(url, headers=headers, timeout=120)
+        if resp.status_code != 200:
+            raise RuntimeError(f"Raynet company API {resp.status_code}: {resp.text[:500]}")
+        data = (resp.json() or {}).get("data") or []
+        print(f"    klienti offset={offset}: {len(data)}", flush=True)
+        for company in data:
+            cid = company.get("id")
+            if cid is None:
+                continue
+            cache[int(cid)] = extract_kraj_from_company(company)
+        if len(data) < 1000:
+            break
+        offset += 1000
+    filled = sum(1 for val in cache.values() if val)
+    print(f"  Klienti: {len(cache)}, s krajem: {filled}", flush=True)
+    return cache
+
+
+def event_company_id(item: dict) -> int | None:
+    company = item.get("company")
+    if isinstance(company, dict) and company.get("id") is not None:
+        return int(company["id"])
+    if isinstance(company, int):
+        return company
+    for participant in item.get("participants") or []:
+        raw = participant.get("company")
+        if isinstance(raw, dict) and raw.get("id") is not None:
+            return int(raw["id"])
+        if isinstance(raw, int):
+            return raw
+    return None
+
+
+def resolve_company_kraj(item: dict, company_cache: dict[int, str]) -> str:
     kraj = extract_kraj_from_event(item)
     if kraj:
         return kraj
-
-    company_id = (item.get("company") or {}).get("id")
+    company_id = event_company_id(item)
     if not company_id:
         return ""
-    if company_id in company_cache:
-        return company_cache[company_id]
-
-    try:
-        response = call_raynet_company_detail(
-            username=username,
-            api_key=api_key,
-            instance=instance,
-            company_id=int(company_id),
-        )
-        company = response.get("data") or {}
-        kraj = _clean_text(
-            ((company.get("primaryAddress") or {}).get("address") or {}).get("province")
-        )
-    except Exception as exc:
-        print(f"    company/{company_id}: nelze načíst kraj ({exc})", flush=True)
-        kraj = ""
-    company_cache[int(company_id)] = kraj
-    return kraj
+    return company_cache.get(int(company_id), "")
 
 
 def api_fetch(username: str, api_key: str, instance: str, parameters: dict) -> list[dict]:
@@ -244,19 +256,13 @@ def flatten_main_events(
     instance: str,
 ) -> list[dict]:
     rows: list[dict] = []
-    company_cache: dict[int, str] = {}
+    company_cache = fetch_company_kraj_map(username, api_key, instance)
+    print("  Sestavuji řádky montáží…", flush=True)
     for response in all_responses:
         for item in response.get("data") or []:
             start = item.get("scheduledFrom")
             end = item.get("scheduledTill")
             ts_start = parse_ts(start)
-            kraj = resolve_company_kraj(
-                item=item,
-                username=username,
-                api_key=api_key,
-                instance=instance,
-                company_cache=company_cache,
-            )
             rows.append({
                 "kategorie": (item.get("category") or {}).get("value") or "",
                 "naplanovano_od": ts_start,
@@ -265,13 +271,15 @@ def flatten_main_events(
                 "predmet": item.get("title") or "",
                 "ucastnici": join_participants(item.get("participants")),
                 "misto_setkani": item.get("meetingPlace") or "",
-                "kraj": kraj,
+                "kraj": resolve_company_kraj(item, company_cache),
                 "stitky": join_tags(item.get("tags")),
                 "mesic": ts_start.month if ts_start else None,
                 "rok": ts_start.year if ts_start else None,
                 "naplanovano_od_datum": ts_start.date() if ts_start else None,
                 "mesic_datum": ts_start.month if ts_start else None,
             })
+    filled = sum(1 for row in rows if _clean_text(row.get("kraj")))
+    print(f"  Události: {len(rows)}, s krajem: {filled}", flush=True)
     return rows
 
 
@@ -345,6 +353,7 @@ def row_to_tuple(row: dict, cols: list[str]) -> tuple:
 def replace_table(conn, table: str, cols: list[str], rows: list[dict]) -> int:
     from psycopg2.extras import execute_batch
 
+    print(f"  Ukládám {table} ({len(rows)} řádků)…", flush=True)
     placeholders = ", ".join(["%s"] * len(cols))
     col_list = ", ".join(cols)
     sql = f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})"
@@ -365,6 +374,7 @@ def sync_main(conn, username: str, api_key: str, instance: str) -> dict[str, int
         instance=instance,
     )
     montaze, zamerovaci = split_montaze_zamerovaci(responses, all_rows)
+    print(f"  Zaměřovací: {len(zamerovaci)}, montáže: {len(montaze)}", flush=True)
     n_z = replace_table(conn, "raynet_zamerovaci", ZAMEROVACI_INSERT_COLS, zamerovaci)
     n_m = replace_table(conn, "raynet_montaze", MONTAZE_INSERT_COLS, montaze)
     return {"raynet_zamerovaci": n_z, "raynet_montaze": n_m}

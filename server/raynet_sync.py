@@ -136,6 +136,80 @@ def call_raynet_api(
     return resp.json()
 
 
+def call_raynet_company_detail(
+    *,
+    username: str,
+    api_key: str,
+    instance: str,
+    company_id: int,
+) -> dict:
+    url = f"https://app.raynet.cz/api/v2/company/{company_id}/"
+    auth = base64.b64encode(f"{username}:{api_key}".encode()).decode()
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Basic {auth}",
+        "X-Instance-Name": instance,
+    }
+    resp = requests.get(url, headers=headers, timeout=120)
+    if resp.status_code != 200:
+        raise RuntimeError(f"Raynet company API {resp.status_code}: {resp.text[:500]}")
+    return resp.json()
+
+
+def _clean_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def extract_kraj_from_event(item: dict) -> str:
+    """Vrátí kraj přímo z eventu, pokud je v payloadu dostupný."""
+    candidates = [
+        ((item.get("companyAddress") or {}).get("province")),
+        ((((item.get("company") or {}).get("primaryAddress") or {}).get("address") or {}).get("province")),
+        (((item.get("address") or {}).get("province"))),
+    ]
+    for value in candidates:
+        text = _clean_text(value)
+        if text:
+            return text
+    return ""
+
+
+def resolve_company_kraj(
+    *,
+    item: dict,
+    username: str,
+    api_key: str,
+    instance: str,
+    company_cache: dict[int, str],
+) -> str:
+    kraj = extract_kraj_from_event(item)
+    if kraj:
+        return kraj
+
+    company_id = (item.get("company") or {}).get("id")
+    if not company_id:
+        return ""
+    if company_id in company_cache:
+        return company_cache[company_id]
+
+    try:
+        response = call_raynet_company_detail(
+            username=username,
+            api_key=api_key,
+            instance=instance,
+            company_id=int(company_id),
+        )
+        company = response.get("data") or {}
+        kraj = _clean_text(
+            ((company.get("primaryAddress") or {}).get("address") or {}).get("province")
+        )
+    except Exception as exc:
+        print(f"    company/{company_id}: nelze načíst kraj ({exc})", flush=True)
+        kraj = ""
+    company_cache[int(company_id)] = kraj
+    return kraj
+
+
 def api_fetch(username: str, api_key: str, instance: str, parameters: dict) -> list[dict]:
     all_responses: list[dict] = []
     n_cat = len(parameters["category"])
@@ -162,13 +236,27 @@ def api_fetch(username: str, api_key: str, instance: str, parameters: dict) -> l
     return all_responses
 
 
-def flatten_main_events(all_responses: list[dict]) -> list[dict]:
+def flatten_main_events(
+    all_responses: list[dict],
+    *,
+    username: str,
+    api_key: str,
+    instance: str,
+) -> list[dict]:
     rows: list[dict] = []
+    company_cache: dict[int, str] = {}
     for response in all_responses:
         for item in response.get("data") or []:
             start = item.get("scheduledFrom")
             end = item.get("scheduledTill")
             ts_start = parse_ts(start)
+            kraj = resolve_company_kraj(
+                item=item,
+                username=username,
+                api_key=api_key,
+                instance=instance,
+                company_cache=company_cache,
+            )
             rows.append({
                 "kategorie": (item.get("category") or {}).get("value") or "",
                 "naplanovano_od": ts_start,
@@ -177,7 +265,7 @@ def flatten_main_events(all_responses: list[dict]) -> list[dict]:
                 "predmet": item.get("title") or "",
                 "ucastnici": join_participants(item.get("participants")),
                 "misto_setkani": item.get("meetingPlace") or "",
-                "kraj": ((item.get("companyAddress") or {}).get("province") or ""),
+                "kraj": kraj,
                 "stitky": join_tags(item.get("tags")),
                 "mesic": ts_start.month if ts_start else None,
                 "rok": ts_start.year if ts_start else None,
@@ -270,7 +358,12 @@ def replace_table(conn, table: str, cols: list[str], rows: list[dict]) -> int:
 
 def sync_main(conn, username: str, api_key: str, instance: str) -> dict[str, int]:
     responses = api_fetch(username, api_key, instance, MAIN_PARAMS)
-    all_rows = flatten_main_events(responses)
+    all_rows = flatten_main_events(
+        responses,
+        username=username,
+        api_key=api_key,
+        instance=instance,
+    )
     montaze, zamerovaci = split_montaze_zamerovaci(responses, all_rows)
     n_z = replace_table(conn, "raynet_zamerovaci", ZAMEROVACI_INSERT_COLS, zamerovaci)
     n_m = replace_table(conn, "raynet_montaze", MONTAZE_INSERT_COLS, montaze)

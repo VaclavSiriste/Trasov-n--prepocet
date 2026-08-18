@@ -103,6 +103,8 @@ CITY_TO_KRAJ = {
     "brandys nad labem": "Středočeský kraj",
     "celakovice": "Středočeský kraj",
     "ricany": "Středočeský kraj",
+    "dvur kralove": "Královéhradecký kraj",
+    "dvur kralove nad labem": "Královéhradecký kraj",
 }
 
 # První 3 čísla PSČ → kraj (přibližné rozsahy České pošty).
@@ -114,8 +116,8 @@ PSC_RANGES = [
     (370, 398, "Jihočeský kraj"),
     (400, 441, "Ústecký kraj"),
     (460, 473, "Liberecký kraj"),
-    (500, 518, "Královéhradecký kraj"),
-    (547, 552, "Královéhradecký kraj"),
+    (500, 529, "Královéhradecký kraj"),
+    (540, 552, "Královéhradecký kraj"),
     (530, 539, "Pardubický kraj"),
     (560, 571, "Pardubický kraj"),
     (580, 595, "Kraj Vysočina"),
@@ -197,7 +199,15 @@ def kraj_from_city(city: Any) -> str:
 
 
 def kraj_from_psc(zip_code: Any) -> str:
-    digits = re.sub(r"\D", "", _clean(zip_code))
+    """Kraj z PSČ. Z celého řádku adresy bere jen tvar 123 45 / 12345, ne číslo popisné."""
+    text = _clean(zip_code)
+    matches = re.findall(r"\b(\d{3}\s?\d{2})\b", text)
+    if matches:
+        digits = re.sub(r"\D", "", matches[-1])
+    else:
+        digits = re.sub(r"\D", "", text)
+        if len(digits) != 5:
+            return ""
     if len(digits) < 3:
         return ""
     prefix = int(digits[:3])

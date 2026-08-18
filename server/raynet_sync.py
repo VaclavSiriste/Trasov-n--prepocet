@@ -7,7 +7,6 @@ import os
 import time as time_mod
 from datetime import datetime, time, timedelta, timezone
 from typing import Any
-from urllib.parse import quote
 
 import requests
 
@@ -170,18 +169,8 @@ def _clean_text(value: Any) -> str:
     return str(value or "").strip()
 
 
-def extract_kraj_from_company(company: dict | None) -> str:
-    company = company or {}
-    for addr_key in ("primaryAddress", "contactAddress"):
-        addr = ((company.get(addr_key) or {}).get("address") or {})
-        text = infer_kraj_from_address(addr)
-        if text:
-            return text
-    return ""
-
-
 def extract_kraj_from_event(item: dict) -> str:
-    """Kraj z adresy přímo na události (má přednost před sídlem klienta)."""
+    """Kraj jen z události: adresa, město, PSČ, místo setkání."""
     candidates = [
         infer_kraj_from_address(item.get("companyAddress") or {}),
         infer_kraj_from_address(item.get("address") or {}),
@@ -192,70 +181,6 @@ def extract_kraj_from_event(item: dict) -> str:
         if text:
             return text
     return ""
-
-
-def fetch_company_kraj_map(
-    username: str,
-    api_key: str,
-    instance: str,
-    company_ids: set[int],
-) -> dict[int, str]:
-    """Stáhne kraje jen u klientů, kterým na události kraj chybí."""
-    cache: dict[int, str] = {}
-    ids = sorted({int(cid) for cid in company_ids if cid})
-    if not ids:
-        print("  Žádní klienti k doplnění kraje.", flush=True)
-        return cache
-    headers = raynet_headers(username, api_key, instance)
-    chunk_size = 40
-    print(f"  Stahuji kraje {len(ids)} klientů (po {chunk_size})…", flush=True)
-    for start in range(0, len(ids), chunk_size):
-        chunk = ids[start:start + chunk_size]
-        id_list = ",".join(str(cid) for cid in chunk)
-        url = (
-            "https://app.raynet.cz/api/v2/company/"
-            f"?limit=1000&id[IN]={quote(id_list)}"
-        )
-        payload = raynet_get(url, headers)
-        data = payload.get("data") or []
-        print(
-            f"    klienti {start + 1}-{start + len(chunk)}/{len(ids)}: {len(data)}",
-            flush=True,
-        )
-        for company in data:
-            cid = company.get("id")
-            if cid is None:
-                continue
-            cache[int(cid)] = extract_kraj_from_company(company)
-        time_mod.sleep(0.35)
-    filled = sum(1 for val in cache.values() if val)
-    print(f"  Klienti doplněni: {len(cache)}, s krajem: {filled}", flush=True)
-    return cache
-
-
-def event_company_id(item: dict) -> int | None:
-    company = item.get("company")
-    if isinstance(company, dict) and company.get("id") is not None:
-        return int(company["id"])
-    if isinstance(company, int):
-        return company
-    for participant in item.get("participants") or []:
-        raw = participant.get("company")
-        if isinstance(raw, dict) and raw.get("id") is not None:
-            return int(raw["id"])
-        if isinstance(raw, int):
-            return raw
-    return None
-
-
-def resolve_company_kraj(item: dict, company_cache: dict[int, str]) -> str:
-    kraj = extract_kraj_from_event(item)
-    if kraj:
-        return kraj
-    company_id = event_company_id(item)
-    if not company_id:
-        return ""
-    return company_cache.get(int(company_id), "")
 
 
 def api_fetch(username: str, api_key: str, instance: str, parameters: dict) -> list[dict]:
@@ -284,37 +209,18 @@ def api_fetch(username: str, api_key: str, instance: str, parameters: dict) -> l
     return all_responses
 
 
-def flatten_main_events(
-    all_responses: list[dict],
-    *,
-    username: str,
-    api_key: str,
-    instance: str,
-) -> list[dict]:
+def flatten_main_events(all_responses: list[dict]) -> list[dict]:
     rows: list[dict] = []
-    print("  Sestavuji řádky montáží…", flush=True)
-    items: list[dict] = []
-    need_ids: set[int] = set()
+    print("  Sestavuji řádky z událostí…", flush=True)
+    with_kraj = 0
     for response in all_responses:
         for item in response.get("data") or []:
-            items.append(item)
-            if not extract_kraj_from_event(item):
-                cid = event_company_id(item)
-                if cid:
-                    need_ids.add(int(cid))
-    company_cache = fetch_company_kraj_map(username, api_key, instance, need_ids)
-    from_event = 0
-    from_company = 0
-    for item in items:
             start = item.get("scheduledFrom")
             end = item.get("scheduledTill")
             ts_start = parse_ts(start)
-            kraj_event = extract_kraj_from_event(item)
-            kraj = kraj_event or resolve_company_kraj(item, company_cache)
-            if kraj_event:
-                from_event += 1
-            elif kraj:
-                from_company += 1
+            kraj = extract_kraj_from_event(item)
+            if kraj:
+                with_kraj += 1
             rows.append({
                 "kategorie": (item.get("category") or {}).get("value") or "",
                 "naplanovano_od": ts_start,
@@ -330,12 +236,7 @@ def flatten_main_events(
                 "naplanovano_od_datum": ts_start.date() if ts_start else None,
                 "mesic_datum": ts_start.month if ts_start else None,
             })
-    filled = sum(1 for row in rows if _clean_text(row.get("kraj")))
-    print(
-        f"  Události: {len(rows)}, s krajem: {filled} "
-        f"(z adresy na události: {from_event}, ze sídla klienta: {from_company})",
-        flush=True,
-    )
+    print(f"  Události: {len(rows)}, s krajem z adresy události: {with_kraj}", flush=True)
     return rows
 
 
@@ -423,12 +324,7 @@ def replace_table(conn, table: str, cols: list[str], rows: list[dict]) -> int:
 
 def sync_main(conn, username: str, api_key: str, instance: str) -> dict[str, int]:
     responses = api_fetch(username, api_key, instance, MAIN_PARAMS)
-    all_rows = flatten_main_events(
-        responses,
-        username=username,
-        api_key=api_key,
-        instance=instance,
-    )
+    all_rows = flatten_main_events(responses)
     montaze, zamerovaci = split_montaze_zamerovaci(responses, all_rows)
     print(f"  Zaměřovací: {len(zamerovaci)}, montáže: {len(montaze)}", flush=True)
     n_z = replace_table(conn, "raynet_zamerovaci", ZAMEROVACI_INSERT_COLS, zamerovaci)

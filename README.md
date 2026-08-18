@@ -223,3 +223,4 @@ export PORT=8080
 - `server/prehled_engine.py` – výpočty přehledu
 - `sql/` – schéma a migrace
 - `scripts/init_db.py` – migrace při startu na Railway
+

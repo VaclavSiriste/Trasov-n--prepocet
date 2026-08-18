@@ -177,6 +177,7 @@ def flatten_main_events(all_responses: list[dict]) -> list[dict]:
                 "predmet": item.get("title") or "",
                 "ucastnici": join_participants(item.get("participants")),
                 "misto_setkani": item.get("meetingPlace") or "",
+                "kraj": ((item.get("companyAddress") or {}).get("province") or ""),
                 "stitky": join_tags(item.get("tags")),
                 "mesic": ts_start.month if ts_start else None,
                 "rok": ts_start.year if ts_start else None,

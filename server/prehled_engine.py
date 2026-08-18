@@ -38,6 +38,42 @@ LOKALITA_KRAJE_DEFAULT: dict[str, list[str]] = {
     "České Budějovice": ["Jihočeský kraj"],
 }
 
+# Hlavní skupiny z Přehledu – mají přednost před jedno-krajovými lokalitami (Zlín, Olomouc…).
+PRIMARY_LOKALITY = ["MSK", "PR/ST", "BR", "PCE/KH", "PL", "Ústí", "Libr"]
+
+
+def _norm_kraj_token(val: str) -> str:
+    return (
+        (val or "")
+        .strip()
+        .lower()
+        .replace("kraj ", "")
+        .replace(" kraj", "")
+        .replace("hlavní město ", "")
+        .replace("hlavni mesto ", "")
+    )
+
+
+def lokalita_from_kraj(kraj: str | None) -> str:
+    """Převede kraj z Raynetu (Moravskoslezský kraj) na lokalitu Přehledu (MSK)."""
+    raw = (kraj or "").strip()
+    if not raw:
+        return "MSK"
+    if raw in LOKALITA_KRAJE_DEFAULT:
+        return raw
+    needle = _norm_kraj_token(raw)
+    if not needle:
+        return "MSK"
+    order = PRIMARY_LOKALITY + [lok for lok in LOKALITA_KRAJE_DEFAULT if lok not in PRIMARY_LOKALITY]
+    for lok in order:
+        if _norm_kraj_token(lok) == needle:
+            return lok
+        for name in LOKALITA_KRAJE_DEFAULT[lok]:
+            token = _norm_kraj_token(name)
+            if token == needle or token.startswith(needle) or needle.startswith(token):
+                return lok
+    return "MSK"
+
 
 def daterange(start: date, end: date):
     d = start
@@ -157,17 +193,23 @@ def merge_daily_rosters(base: list[dict], overlay: list[dict]) -> list[dict]:
             continue
         if key in idx:
             merged = dict(idx[key])
-            for field in ("col_index", "target_flag", "destination_region"):
-                if field in entry and entry[field] is not None:
-                    merged[field] = entry[field]
+            if entry.get("col_index") is not None:
+                merged["col_index"] = entry["col_index"]
+            if entry.get("target_flag") is not None:
+                merged["target_flag"] = entry["target_flag"]
+            dest = str(entry.get("destination_region") or "").strip()
+            if dest:
+                merged["destination_region"] = dest
             idx[key] = merged
         else:
-            idx[key] = dict(entry)
+            dest = str(entry.get("destination_region") or "").strip()
+            if dest or int(entry.get("target_flag") or 0) == 1:
+                idx[key] = dict(entry)
     return list(idx.values())
 
 
 def derive_daily_roster_from_raynet(raynet_rows: list[dict]) -> list[dict]:
-    """Z Raynet hodin sestaví denní rozpis: montér má target=1 v den, kdy má hodiny, kraj zůstává prázdný."""
+    """Z Raynet hodin sestaví denní rozpis: target=1 a lokalita podle kraje zakázky."""
     entries: list[dict] = []
     seen: set[tuple[str, str]] = set()
     for row in raynet_rows:
@@ -179,6 +221,7 @@ def derive_daily_roster_from_raynet(raynet_rows: list[dict]) -> list[dict]:
         hours = float(row.get("hodin") or row.get("pocet_monterohodin") or 0)
         if hours <= 0:
             continue
+        dest = lokalita_from_kraj(row.get("kraj"))
         for col in ("monter_c_1", "monter_c_2", "monter_c_3"):
             name = (row.get(col) or "").strip()
             if not name:
@@ -192,7 +235,7 @@ def derive_daily_roster_from_raynet(raynet_rows: list[dict]) -> list[dict]:
                 "jmeno": name,
                 "datum": day.isoformat(),
                 "target_flag": 1,
-                "destination_region": "",
+                "destination_region": dest,
             })
     return entries
 

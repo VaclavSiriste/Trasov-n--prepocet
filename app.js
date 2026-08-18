@@ -319,6 +319,34 @@ function parseMonthKeyParts(monthKey) {
   return { rok: y, mesic: m };
 }
 
+function shiftIsoToMonth(iso, rok, mesic) {
+  const day = Number(String(iso || "").slice(8, 10)) || 1;
+  const last = new Date(rok, mesic, 0).getDate();
+  const clamped = Math.min(Math.max(day, 1), last);
+  return `${rok}-${String(mesic).padStart(2, "0")}-${String(clamped).padStart(2, "0")}`;
+}
+
+function applyKoefFromMonthKey(monthKey) {
+  const { rok, mesic } = parseMonthKeyParts(monthKey);
+  const mesicEl = document.getElementById("nastavenyMesic");
+  const rokEl = document.getElementById("nastavenyRok");
+  if (mesicEl) mesicEl.value = String(mesic);
+  if (rokEl) rokEl.value = String(rok);
+}
+
+function shiftOverviewObdobiToMonth(monthKey) {
+  const { rok, mesic } = parseMonthKeyParts(monthKey);
+  (overviewPrehled.rows || []).forEach((row) => {
+    if (row.od) row.od = shiftIsoToMonth(row.od, rok, mesic);
+    if (row.do) row.do = shiftIsoToMonth(row.do, rok, mesic);
+  });
+  OBDPOBI_SKUPINY.forEach((skupina) => {
+    skupina.defaultOd = shiftIsoToMonth(skupina.defaultOd, rok, mesic);
+    skupina.defaultDo = shiftIsoToMonth(skupina.defaultDo, rok, mesic);
+  });
+  renderCiselnikSkupiny();
+}
+
 function daysInMonthKey(monthKey) {
   const { rok, mesic } = parseMonthKeyParts(monthKey);
   const last = new Date(rok, mesic, 0).getDate();
@@ -446,6 +474,13 @@ function recomputeMonthStatsFromRoster(monthData) {
 
 function getMonthLabel(key) {
   return MONTHS_2026.find((m) => m.key === key)?.label || key;
+}
+
+function updateAppMonthBadge() {
+  const el = document.getElementById("monthBadge");
+  if (!el) return;
+  const onMonthTab = document.getElementById("month")?.classList.contains("is-active");
+  el.textContent = getMonthLabel(onMonthTab ? activeMonthKey : overviewMonthKey);
 }
 
 function getActiveMonthData() {
@@ -1813,7 +1848,6 @@ function renderMonthGrid() {
     const monthData = getActiveMonthData();
     const monthLabel = getMonthLabel(activeMonthKey);
     const titleEl = document.getElementById("monthDailyTitle");
-    const badgeEl = document.getElementById("monthBadge");
     const head = document.getElementById("monthGridHead");
     const body = document.getElementById("monthGridBody");
     const foot = document.getElementById("monthGridFoot");
@@ -1823,7 +1857,7 @@ function renderMonthGrid() {
     }
 
     titleEl.textContent = `Měsíční zápis – ${monthLabel}`;
-    if (badgeEl) badgeEl.textContent = monthLabel;
+    updateAppMonthBadge();
 
     ensureMonthRowsComplete(monthData, activeMonthKey);
     const members = getGridMembers(monthData);
@@ -2332,13 +2366,17 @@ function setupTabs() {
       const monthKey = tabButton.dataset.month;
       if (!monthKey) return;
       activeMonthKey = monthKey;
+      overviewMonthKey = monthKey;
+      const overviewSelect = document.getElementById("overviewMonthKey");
+      if (overviewSelect) overviewSelect.value = monthKey;
+      applyKoefFromMonthKey(monthKey);
       pruneMemberCopySelection();
       clearGridRegionSelection();
-      document.getElementById("monthBadge").textContent = getMonthLabel(activeMonthKey);
+      updateAppMonthBadge();
       updateMonthEditorLabel(activeMonthKey);
       fetchMesicFromApi(activeMonthKey);
     } else {
-      document.getElementById("monthBadge").textContent = "2026";
+      updateAppMonthBadge();
     }
   });
 }
@@ -2353,9 +2391,13 @@ function setupOverviewToolbar() {
     if (key === overviewMonthKey) opt.selected = true;
     monthSelect.append(opt);
   });
-  monthSelect.addEventListener("change", () => {
+  monthSelect.addEventListener("change", async () => {
     overviewMonthKey = monthSelect.value;
-    fetchPrehledFromApi();
+    activeMonthKey = overviewMonthKey;
+    applyKoefFromMonthKey(overviewMonthKey);
+    shiftOverviewObdobiToMonth(overviewMonthKey);
+    updateAppMonthBadge();
+    await saveAllObdobiSkupiny();
   });
   document.getElementById("syncRaynetBtn")?.addEventListener("click", async () => {
     const status = document.getElementById("apiStatus");
@@ -2498,6 +2540,7 @@ async function init() {
     renderKoeficienty();
     await loadMesicForOverview();
     await fetchPrehledFromApi();
+    updateAppMonthBadge();
   } catch (err) {
     console.error("Init selhal:", err);
     const status = document.getElementById("apiStatus");

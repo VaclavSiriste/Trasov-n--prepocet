@@ -131,29 +131,67 @@ PSC_RANGES = [
 ]
 
 
+KNOWN_KRAJE = [
+    "Hlavní město Praha",
+    "Jihomoravský kraj",
+    "Kraj Vysočina",
+    "Královéhradecký kraj",
+    "Liberecký kraj",
+    "Moravskoslezský kraj",
+    "Olomoucký kraj",
+    "Pardubický kraj",
+    "Plzeňský kraj",
+    "Karlovarský kraj",
+    "Středočeský kraj",
+    "Ústecký kraj",
+    "Zlínský kraj",
+    "Jihočeský kraj",
+]
+
+
 def _clean(value: Any) -> str:
     return str(value or "").strip()
 
 
-def normalize_city(value: Any) -> str:
+def _fold(value: Any) -> str:
     text = _clean(value).translate(_DIACRITICS).lower()
     text = text.replace("-", " ").replace(".", " ")
-    text = re.sub(r"\s+", " ", text)
-    for sep in (",", ";", "/"):
-        if sep in text:
-            text = text.split(sep, 1)[0].strip()
-    return text
+    text = re.sub(r"[^a-z0-9 ]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def kraj_from_province(value: Any) -> str:
+    """Vrátí kraj jen když text opravdu vypadá jako název kraje, ne ulice."""
+    needle = _fold(value)
+    if not needle:
+        return ""
+    aliases = {
+        "praha": "Hlavní město Praha",
+        "hlavni mesto praha": "Hlavní město Praha",
+        "vysocina": "Kraj Vysočina",
+        "kraj vysocina": "Kraj Vysočina",
+    }
+    if needle in aliases:
+        return aliases[needle]
+    for kraj in KNOWN_KRAJE:
+        folded = _fold(kraj)
+        short = folded.replace("kraj ", "").replace(" kraj", "").strip()
+        if needle in {folded, short}:
+            return kraj
+    return ""
 
 
 def kraj_from_city(city: Any) -> str:
-    needle = normalize_city(city)
+    needle = _fold(city)
     if not needle:
         return ""
     if needle in CITY_TO_KRAJ:
         return CITY_TO_KRAJ[needle]
-    # "Ostrava Poruba", "Praha 4"
-    for key, kraj in CITY_TO_KRAJ.items():
-        if needle.startswith(key + " ") or needle.startswith(key + "-"):
+    padded = f" {needle} "
+    for key, kraj in sorted(CITY_TO_KRAJ.items(), key=lambda kv: -len(kv[0])):
+        if len(key) < 4:
+            continue
+        if padded == f" {key} " or padded.startswith(f" {key} ") or f" {key} " in padded:
             return kraj
     return ""
 
@@ -170,13 +208,33 @@ def kraj_from_psc(zip_code: Any) -> str:
 
 
 def infer_kraj_from_address(address: dict | None, extra_city: str = "") -> str:
-    """Kraj z province, jinak z města, jinak z PSČ."""
+    """Kraj z platného province, města, PSČ, nebo z textu adresy/ulice."""
     address = address or {}
-    province = _clean(address.get("province"))
-    if province:
-        return province
+    if not isinstance(address, dict):
+        return kraj_from_city(address) or kraj_from_psc(address)
+
+    kraj = kraj_from_province(address.get("province"))
+    if kraj:
+        return kraj
+
     city = _clean(address.get("city")) or extra_city
     kraj = kraj_from_city(city)
     if kraj:
         return kraj
-    return kraj_from_psc(address.get("zipCode") or address.get("zip") or address.get("psc"))
+
+    kraj = kraj_from_psc(
+        address.get("zipCode") or address.get("zip") or address.get("psc") or city or extra_city
+    )
+    if kraj:
+        return kraj
+
+    blob = " ".join(
+        part for part in (
+            city,
+            extra_city,
+            _clean(address.get("street")),
+            _clean(address.get("province")),
+            _clean(address.get("name")),
+        ) if part
+    )
+    return kraj_from_city(blob)

@@ -137,6 +137,38 @@ CITY_TO_KRAJ = {
     "skuhrov": "Středočeský kraj",
     "liten": "Středočeský kraj",
     "polom": "Moravskoslezský kraj",
+    "teskovice": "Moravskoslezský kraj",
+    "odrovice": "Jihomoravský kraj",
+    "modra": "Zlínský kraj",
+    "horomerice": "Středočeský kraj",
+    "blovice": "Plzeňský kraj",
+    "skalicka": "Olomoucký kraj",
+    "krepice": "Jihomoravský kraj",
+    "litice u plzne": "Plzeňský kraj",
+    "litice": "Plzeňský kraj",
+    "vedrovice": "Jihomoravský kraj",
+    "milovice": "Středočeský kraj",
+    "dobrna": "Ústecký kraj",
+    "dolni prim": "Královéhradecký kraj",
+    "konice": "Olomoucký kraj",
+    "chocnejovice": "Středočeský kraj",
+    "valdice": "Královéhradecký kraj",
+    "svatoborice mistrin": "Jihomoravský kraj",
+    "drinov": "Středočeský kraj",
+    "drinov u melnika": "Středočeský kraj",
+    "rapotin": "Olomoucký kraj",
+    "loucen": "Středočeský kraj",
+    "krenovice": "Olomoucký kraj",
+    "kostelec nad cernymi lesy": "Středočeský kraj",
+    "kostelec nad cernymi": "Středočeský kraj",
+    "zvonovice": "Jihomoravský kraj",
+    "rostinice zvonovice": "Jihomoravský kraj",
+    "kamyk nad vltavou": "Středočeský kraj",
+    "vitkov": "Moravskoslezský kraj",
+    "rudna": "Středočeský kraj",
+    "druzec": "Středočeský kraj",
+    "vincencov": "Olomoucký kraj",
+    "pasohlavky": "Jihomoravský kraj",
 }
 
 # První 3 čísla PSČ → kraj (přibližné rozsahy České pošty).
@@ -248,6 +280,23 @@ def kraj_from_psc(zip_code: Any) -> str:
     return ""
 
 
+_KRAJ_TYPO_MAP = {
+    "moravskosleszky": "Moravskoslezský kraj",
+    "moravskoslesky": "Moravskoslezský kraj",
+    "jihocesky": "Jihočeský kraj",
+    "jihomoravky": "Jihomoravský kraj",
+    "stredocesky": "Středočeský kraj",
+    "kralovehradecky": "Královéhradecký kraj",
+    "pardubicky": "Pardubický kraj",
+    "olomoucky": "Olomoucký kraj",
+    "zlinsky": "Zlínský kraj",
+    "ustecky": "Ústecký kraj",
+    "liberecky": "Liberecký kraj",
+    "plzensky": "Plzeňský kraj",
+    "karlovarsky": "Karlovarský kraj",
+}
+
+
 def kraj_from_text(text: Any) -> str:
     """Hledá kraj v libovolném textu (misto_setkani): nejdřív název kraje, pak město, pak PSČ."""
     raw = _clean(text)
@@ -257,6 +306,9 @@ def kraj_from_text(text: Any) -> str:
     for kraj in KNOWN_KRAJE:
         kf = _fold(kraj)
         if kf in folded:
+            return kraj
+    for typo, kraj in _KRAJ_TYPO_MAP.items():
+        if typo in folded:
             return kraj
     parts = [p.strip() for p in raw.replace(",", "\n").split("\n") if p.strip()]
     for part in parts:

@@ -105,16 +105,48 @@ CITY_TO_KRAJ = {
     "ricany": "Středočeský kraj",
     "dvur kralove": "Královéhradecký kraj",
     "dvur kralove nad labem": "Královéhradecký kraj",
+    "studenka": "Moravskoslezský kraj",
+    "petrvald": "Moravskoslezský kraj",
+    "bilovec": "Moravskoslezský kraj",
+    "hlucin": "Moravskoslezský kraj",
+    "fulnek": "Moravskoslezský kraj",
+    "odry": "Moravskoslezský kraj",
+    "rychvald": "Moravskoslezský kraj",
+    "repiste": "Moravskoslezský kraj",
+    "hnojnik": "Moravskoslezský kraj",
+    "frenstat pod radhostem": "Moravskoslezský kraj",
+    "frenstat": "Moravskoslezský kraj",
+    "policka": "Pardubický kraj",
+    "milevsko": "Jihočeský kraj",
+    "luhacovice": "Zlínský kraj",
+    "mnichovo hradiste": "Středočeský kraj",
+    "mseno": "Středočeský kraj",
+    "mseno u melnika": "Středočeský kraj",
+    "zruc nad sazavou": "Středočeský kraj",
+    "zruc n sazavou": "Středočeský kraj",
+    "caslav": "Středočeský kraj",
+    "stribro": "Plzeňský kraj",
+    "horni pocernice": "Hlavní město Praha",
+    "moravany": "Jihomoravský kraj",
+    "tecovice": "Zlínský kraj",
+    "kostelec na hane": "Olomoucký kraj",
+    "doloplazy": "Olomoucký kraj",
+    "doloplazy u prostejova": "Olomoucký kraj",
+    "alojzov": "Olomoucký kraj",
+    "slatina": "Moravskoslezský kraj",
+    "skuhrov": "Středočeský kraj",
+    "liten": "Středočeský kraj",
+    "polom": "Moravskoslezský kraj",
 }
 
 # První 3 čísla PSČ → kraj (přibližné rozsahy České pošty).
 PSC_RANGES = [
     (100, 199, "Hlavní město Praha"),
-    (250, 294, "Středočeský kraj"),
+    (200, 299, "Středočeský kraj"),
     (301, 348, "Plzeňský kraj"),
     (350, 364, "Karlovarský kraj"),
-    (370, 398, "Jihočeský kraj"),
-    (400, 441, "Ústecký kraj"),
+    (370, 399, "Jihočeský kraj"),
+    (400, 459, "Ústecký kraj"),
     (460, 473, "Liberecký kraj"),
     (500, 529, "Královéhradecký kraj"),
     (540, 552, "Královéhradecký kraj"),
@@ -125,8 +157,7 @@ PSC_RANGES = [
     (690, 697, "Jihomoravský kraj"),
     (686, 688, "Zlínský kraj"),
     (755, 769, "Zlínský kraj"),
-    (700, 739, "Moravskoslezský kraj"),
-    (746, 747, "Moravskoslezský kraj"),
+    (700, 749, "Moravskoslezský kraj"),
     (793, 794, "Moravskoslezský kraj"),
     (750, 751, "Olomoucký kraj"),
     (770, 789, "Olomoucký kraj"),
@@ -215,6 +246,27 @@ def kraj_from_psc(zip_code: Any) -> str:
         if start <= prefix <= end:
             return kraj
     return ""
+
+
+def kraj_from_text(text: Any) -> str:
+    """Hledá kraj v libovolném textu (misto_setkani): nejdřív název kraje, pak město, pak PSČ."""
+    raw = _clean(text)
+    if not raw:
+        return ""
+    folded = _fold(raw)
+    for kraj in KNOWN_KRAJE:
+        kf = _fold(kraj)
+        if kf in folded:
+            return kraj
+    parts = [p.strip() for p in raw.replace(",", "\n").split("\n") if p.strip()]
+    for part in parts:
+        result = kraj_from_city(part)
+        if result:
+            return result
+    result = kraj_from_psc(raw)
+    if result:
+        return result
+    return kraj_from_city(raw)
 
 
 def infer_kraj_from_address(address: dict | None, extra_city: str = "") -> str:

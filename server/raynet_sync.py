@@ -15,7 +15,7 @@ _ADAPTER = requests.adapters.HTTPAdapter(pool_connections=2, pool_maxsize=2)
 _SESSION.mount("https://", _ADAPTER)
 _SESSION.mount("http://", _ADAPTER)
 
-from kraj_from_address import infer_kraj_from_address, kraj_from_city, kraj_from_psc
+from kraj_from_address import infer_kraj_from_address, kraj_from_city, kraj_from_psc, kraj_from_text
 from raynet_derive import enrich_montaze_row
 
 MAIN_PARAMS = {
@@ -175,8 +175,7 @@ def extract_kraj_from_event(item: dict) -> str:
     candidates = [
         infer_kraj_from_address(item.get("companyAddress") or {}, extra_city=place),
         infer_kraj_from_address(item.get("address") or {}, extra_city=place),
-        kraj_from_city(place),
-        kraj_from_psc(place),
+        kraj_from_text(place),
     ]
     for value in candidates:
         text = _clean_text(value)

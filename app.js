@@ -846,6 +846,18 @@ function regionValueAt(row, col) {
   return normalizeRegionCode(getMemberDayField(member, date, "destinationRegion"));
 }
 
+function setRegionAndSave(row, col, val) {
+  const monthData = getActiveMonthData();
+  const date = monthData.rows[row]?.date;
+  const member = gridMemberFromCol(col);
+  if (!date || !member) return;
+  setMemberDayFieldForMember(member, date, "destinationRegion", val);
+  saveState();
+  scheduleSaveMesicZapis();
+  if (overviewMonthKey === activeMonthKey) fetchPrehledFromApi();
+  renderMonthGrid();
+}
+
 function fillSelectedRegionsFromAnchor() {
   if (gridRegionSelection.size < 2 || !gridRegionAnchor) return false;
   const col = regionColForMember(gridRegionAnchor.memberIdx);
@@ -855,6 +867,7 @@ function fillSelectedRegionsFromAnchor() {
 }
 
 let fillHandleDragging = false;
+let regionClipboard = "";
 
 function isFillHandleClick(e, td) {
   if (!td.classList.contains("is-region-anchor")) return false;
@@ -941,9 +954,42 @@ function setupGridRegionSelection() {
   });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") clearGridRegionSelection();
-    if ((e.ctrlKey || e.metaKey) && (e.key === "d" || e.key === "D") && gridRegionSelection.size > 1) {
+    if (!gridRegionAnchor) return;
+    const mod = e.ctrlKey || e.metaKey;
+
+    if (mod && (e.key === "d" || e.key === "D") && gridRegionSelection.size > 1) {
       e.preventDefault();
       fillSelectedRegionsFromAnchor();
+      return;
+    }
+
+    if (mod && (e.key === "c" || e.key === "C")) {
+      const col = regionColForMember(gridRegionAnchor.memberIdx);
+      regionClipboard = regionValueAt(gridRegionAnchor.row, col);
+      return;
+    }
+
+    if (mod && (e.key === "v" || e.key === "V") && regionClipboard) {
+      e.preventDefault();
+      const col = regionColForMember(gridRegionAnchor.memberIdx);
+      if (gridRegionSelection.size > 0) {
+        applyRegionValue(regionClipboard, gridRegionAnchor.row, col);
+      } else {
+        setRegionAndSave(gridRegionAnchor.row, col, regionClipboard);
+      }
+      return;
+    }
+
+    if (e.key === "ArrowDown" && gridRegionSelection.size >= 1 && !mod && e.shiftKey) {
+      e.preventDefault();
+      const newRow = gridRegionAnchor.row + Math.max(1, gridRegionSelection.size);
+      const maxRow = (getActiveMonthData().rows || []).length - 1;
+      if (newRow > maxRow) return;
+      for (let r = gridRegionAnchor.row + 1; r <= Math.min(newRow, maxRow); r++) {
+        gridRegionSelection.add(regionCellKey(r, regionColForMember(gridRegionAnchor.memberIdx)));
+      }
+      updateGridRegionSelectionUi();
+      return;
     }
   });
 }

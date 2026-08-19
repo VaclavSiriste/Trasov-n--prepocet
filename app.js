@@ -964,6 +964,7 @@ function setupGridRegionSelection() {
     }
 
     if (mod && (e.key === "c" || e.key === "C")) {
+      e.preventDefault();
       const col = regionColForMember(gridRegionAnchor.memberIdx);
       regionClipboard = regionValueAt(gridRegionAnchor.row, col);
       return;
@@ -972,22 +973,37 @@ function setupGridRegionSelection() {
     if (mod && (e.key === "v" || e.key === "V") && regionClipboard) {
       e.preventDefault();
       const col = regionColForMember(gridRegionAnchor.memberIdx);
-      if (gridRegionSelection.size > 0) {
-        applyRegionValue(regionClipboard, gridRegionAnchor.row, col);
-      } else {
-        setRegionAndSave(gridRegionAnchor.row, col, regionClipboard);
-      }
+      const monthData = getActiveMonthData();
+      const keys = gridRegionSelection.size > 0 ? [...gridRegionSelection] : [regionCellKey(gridRegionAnchor.row, col)];
+      keys.forEach((key) => {
+        const [rowIdx, c] = key.split(":").map(Number);
+        const date = monthData.rows[rowIdx]?.date;
+        const member = gridMemberFromCol(c);
+        if (!date || !member) return;
+        setMemberDayFieldForMember(member, date, "destinationRegion", regionClipboard);
+      });
+      saveState();
+      scheduleSaveMesicZapis();
+      if (overviewMonthKey === activeMonthKey) fetchPrehledFromApi();
+      renderMonthGrid();
       return;
     }
 
-    if (e.key === "ArrowDown" && gridRegionSelection.size >= 1 && !mod && e.shiftKey) {
+    if (e.shiftKey && !mod && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
       e.preventDefault();
-      const newRow = gridRegionAnchor.row + Math.max(1, gridRegionSelection.size);
+      const col = regionColForMember(gridRegionAnchor.memberIdx);
       const maxRow = (getActiveMonthData().rows || []).length - 1;
-      if (newRow > maxRow) return;
-      for (let r = gridRegionAnchor.row + 1; r <= Math.min(newRow, maxRow); r++) {
-        gridRegionSelection.add(regionCellKey(r, regionColForMember(gridRegionAnchor.memberIdx)));
-      }
+      let currentMax = gridRegionAnchor.row;
+      let currentMin = gridRegionAnchor.row;
+      gridRegionSelection.forEach((key) => {
+        const r = Number(key.split(":")[0]);
+        if (r > currentMax) currentMax = r;
+        if (r < currentMin) currentMin = r;
+      });
+      const targetRow = e.key === "ArrowDown"
+        ? Math.min(currentMax + 1, maxRow)
+        : Math.max(currentMin - 1, 0);
+      gridRegionSelection.add(regionCellKey(targetRow, col));
       updateGridRegionSelectionUi();
       return;
     }

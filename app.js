@@ -2275,17 +2275,37 @@ async function saveMonthRosterToApi(monthKey = activeMonthKey) {
   }
 }
 
+function addMonterToRoster(name) {
+  if (!name) return;
+  const current = getMonthRosterNames();
+  if (current.some((n) => normName(n) === normName(name))) return;
+  setMonthRosterNames(activeMonthKey, [...current, name]);
+  renderMonthRoster();
+  renderMonthGrid();
+  renderCards();
+  saveMonthRosterToApi(activeMonthKey);
+}
+
 function setupMonthRosterToolbar() {
   document.getElementById("monthRosterAddBtn")?.addEventListener("click", () => {
     const select = document.getElementById("monthRosterSelect");
     const name = select?.value?.trim();
     if (!name) return;
-    setMonthRosterNames(activeMonthKey, [...getMonthRosterNames(), name]);
-    renderMonthRoster();
-    renderMonthGrid();
-    renderCards();
-    saveMonthRosterToApi(activeMonthKey);
+    addMonterToRoster(name);
     if (select) select.value = "";
+  });
+  document.getElementById("monthRosterAddNewBtn")?.addEventListener("click", () => {
+    const input = document.getElementById("monthRosterNewName");
+    const name = input?.value?.trim();
+    if (!name) return;
+    addMonterToRoster(name);
+    if (input) input.value = "";
+  });
+  document.getElementById("monthRosterNewName")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      document.getElementById("monthRosterAddNewBtn")?.click();
+    }
   });
   document.getElementById("monthRosterDefaultBtn")?.addEventListener("click", () => {
     setMonthRosterNames(activeMonthKey, [...MONTERI_SEZNAM]);

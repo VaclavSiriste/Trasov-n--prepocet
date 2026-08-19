@@ -940,6 +940,20 @@ function handleRegionCellMouseEnter(e) {
   updateGridRegionSelectionUi();
 }
 
+function showRegionToast(msg) {
+  let el = document.getElementById("regionToast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "regionToast";
+    el.style.cssText = "position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:.5rem 1.2rem;border-radius:.5rem;font-size:.875rem;z-index:9999;transition:opacity .3s;pointer-events:none;";
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.style.opacity = "1";
+  clearTimeout(el._tid);
+  el._tid = setTimeout(() => { el.style.opacity = "0"; }, 1800);
+}
+
 function handleRegionKeydown(e) {
   if (e.key === "Escape") { clearGridRegionSelection(); return; }
   if (!gridRegionAnchor) return;
@@ -955,6 +969,7 @@ function handleRegionKeydown(e) {
     e.preventDefault(); e.stopPropagation();
     const col = regionColForMember(gridRegionAnchor.memberIdx);
     regionClipboard = regionValueAt(gridRegionAnchor.row, col);
+    showRegionToast(`Zkopírováno: ${regionClipboard || "—"}`);
     return;
   }
 
@@ -963,7 +978,8 @@ function handleRegionKeydown(e) {
     const col = regionColForMember(gridRegionAnchor.memberIdx);
     const monthData = getActiveMonthData();
     const keys = gridRegionSelection.size > 0 ? [...gridRegionSelection] : [regionCellKey(gridRegionAnchor.row, col)];
-    keys.forEach((key) => {
+    const snapshot = [...keys];
+    snapshot.forEach((key) => {
       const [rowIdx, c] = key.split(":").map(Number);
       const date = monthData.rows[rowIdx]?.date;
       const member = gridMemberFromCol(c);
@@ -973,6 +989,7 @@ function handleRegionKeydown(e) {
     saveState();
     scheduleSaveMesicZapis();
     if (overviewMonthKey === activeMonthKey) fetchPrehledFromApi();
+    showRegionToast(`Vloženo "${regionClipboard}" do ${snapshot.length} buněk`);
     renderMonthGrid();
     return;
   }
@@ -2138,6 +2155,7 @@ function renderMonthGrid() {
     setupGridNavigation();
     setupGridRegionSelection();
     setupMonthGridScroll();
+    updateGridRegionSelectionUi();
     requestAnimationFrame(() => updateMonthGridScrollUi());
   } catch (err) {
     console.error("renderMonthGrid:", err);

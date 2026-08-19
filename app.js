@@ -940,6 +940,65 @@ function handleRegionCellMouseEnter(e) {
   updateGridRegionSelectionUi();
 }
 
+function handleRegionKeydown(e) {
+  if (e.key === "Escape") { clearGridRegionSelection(); return; }
+  if (!gridRegionAnchor) return;
+  const mod = e.ctrlKey || e.metaKey;
+
+  if (mod && (e.key === "d" || e.key === "D") && gridRegionSelection.size > 1) {
+    e.preventDefault(); e.stopPropagation();
+    fillSelectedRegionsFromAnchor();
+    return;
+  }
+
+  if (mod && (e.key === "c" || e.key === "C")) {
+    e.preventDefault(); e.stopPropagation();
+    const col = regionColForMember(gridRegionAnchor.memberIdx);
+    regionClipboard = regionValueAt(gridRegionAnchor.row, col);
+    return;
+  }
+
+  if (mod && (e.key === "v" || e.key === "V") && regionClipboard) {
+    e.preventDefault(); e.stopPropagation();
+    const col = regionColForMember(gridRegionAnchor.memberIdx);
+    const monthData = getActiveMonthData();
+    const keys = gridRegionSelection.size > 0 ? [...gridRegionSelection] : [regionCellKey(gridRegionAnchor.row, col)];
+    keys.forEach((key) => {
+      const [rowIdx, c] = key.split(":").map(Number);
+      const date = monthData.rows[rowIdx]?.date;
+      const member = gridMemberFromCol(c);
+      if (!date || !member) return;
+      setMemberDayFieldForMember(member, date, "destinationRegion", regionClipboard);
+    });
+    saveState();
+    scheduleSaveMesicZapis();
+    if (overviewMonthKey === activeMonthKey) fetchPrehledFromApi();
+    renderMonthGrid();
+    return;
+  }
+
+  if (e.shiftKey && !mod && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+    e.preventDefault(); e.stopPropagation();
+    const col = regionColForMember(gridRegionAnchor.memberIdx);
+    const maxRow = (getActiveMonthData().rows || []).length - 1;
+    let currentMax = gridRegionAnchor.row;
+    let currentMin = gridRegionAnchor.row;
+    gridRegionSelection.forEach((key) => {
+      const r = Number(key.split(":")[0]);
+      if (r > currentMax) currentMax = r;
+      if (r < currentMin) currentMin = r;
+    });
+    const targetRow = e.key === "ArrowDown"
+      ? Math.min(currentMax + 1, maxRow)
+      : Math.max(currentMin - 1, 0);
+    gridRegionSelection.add(regionCellKey(targetRow, col));
+    updateGridRegionSelectionUi();
+    const targetTd = document.querySelector(`#monthGridBody td[data-row="${targetRow}"][data-col="${col}"]`);
+    if (targetTd) targetTd.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    return;
+  }
+}
+
 function setupGridRegionSelection() {
   const body = document.getElementById("monthGridBody");
   if (!body || body.dataset.regionSelectBound) return;
@@ -952,62 +1011,7 @@ function setupGridRegionSelection() {
     fillHandleDragging = false;
     if (shouldFill) fillSelectedRegionsFromAnchor();
   });
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") clearGridRegionSelection();
-    if (!gridRegionAnchor) return;
-    const mod = e.ctrlKey || e.metaKey;
-
-    if (mod && (e.key === "d" || e.key === "D") && gridRegionSelection.size > 1) {
-      e.preventDefault();
-      fillSelectedRegionsFromAnchor();
-      return;
-    }
-
-    if (mod && (e.key === "c" || e.key === "C")) {
-      e.preventDefault();
-      const col = regionColForMember(gridRegionAnchor.memberIdx);
-      regionClipboard = regionValueAt(gridRegionAnchor.row, col);
-      return;
-    }
-
-    if (mod && (e.key === "v" || e.key === "V") && regionClipboard) {
-      e.preventDefault();
-      const col = regionColForMember(gridRegionAnchor.memberIdx);
-      const monthData = getActiveMonthData();
-      const keys = gridRegionSelection.size > 0 ? [...gridRegionSelection] : [regionCellKey(gridRegionAnchor.row, col)];
-      keys.forEach((key) => {
-        const [rowIdx, c] = key.split(":").map(Number);
-        const date = monthData.rows[rowIdx]?.date;
-        const member = gridMemberFromCol(c);
-        if (!date || !member) return;
-        setMemberDayFieldForMember(member, date, "destinationRegion", regionClipboard);
-      });
-      saveState();
-      scheduleSaveMesicZapis();
-      if (overviewMonthKey === activeMonthKey) fetchPrehledFromApi();
-      renderMonthGrid();
-      return;
-    }
-
-    if (e.shiftKey && !mod && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
-      e.preventDefault();
-      const col = regionColForMember(gridRegionAnchor.memberIdx);
-      const maxRow = (getActiveMonthData().rows || []).length - 1;
-      let currentMax = gridRegionAnchor.row;
-      let currentMin = gridRegionAnchor.row;
-      gridRegionSelection.forEach((key) => {
-        const r = Number(key.split(":")[0]);
-        if (r > currentMax) currentMax = r;
-        if (r < currentMin) currentMin = r;
-      });
-      const targetRow = e.key === "ArrowDown"
-        ? Math.min(currentMax + 1, maxRow)
-        : Math.max(currentMin - 1, 0);
-      gridRegionSelection.add(regionCellKey(targetRow, col));
-      updateGridRegionSelectionUi();
-      return;
-    }
-  });
+  document.addEventListener("keydown", handleRegionKeydown, true);
 }
 
 function setupGridNavigation() {

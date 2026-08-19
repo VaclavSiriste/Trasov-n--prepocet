@@ -802,10 +802,15 @@ function clearGridRegionSelection() {
 }
 
 function updateGridRegionSelectionUi() {
+  const anchorKey = gridRegionAnchor
+    ? regionCellKey(gridRegionAnchor.row, regionColForMember(gridRegionAnchor.memberIdx))
+    : null;
   document.querySelectorAll("#monthGridBody td.month-grid-col-kraj").forEach((td) => {
     const row = Number(td.dataset.row);
     const col = Number(td.dataset.col);
-    td.classList.toggle("is-region-selected", gridRegionSelection.has(regionCellKey(row, col)));
+    const key = regionCellKey(row, col);
+    td.classList.toggle("is-region-selected", gridRegionSelection.has(key));
+    td.classList.toggle("is-region-anchor", key === anchorKey);
   });
   const hint = document.getElementById("gridRegionSelectionHint");
   if (hint) {
@@ -849,6 +854,14 @@ function fillSelectedRegionsFromAnchor() {
   return true;
 }
 
+let fillHandleDragging = false;
+
+function isFillHandleClick(e, td) {
+  if (!td.classList.contains("is-region-anchor")) return false;
+  const rect = td.getBoundingClientRect();
+  return e.clientX >= rect.right - 12 && e.clientY >= rect.bottom - 12;
+}
+
 function handleRegionCellMouseDown(e) {
   const td = e.target.closest("td.month-grid-col-kraj");
   if (!td || e.button !== 0) return;
@@ -857,8 +870,14 @@ function handleRegionCellMouseDown(e) {
   const memberIdx = colToMemberIdx(col);
   if (memberIdx == null) return;
 
-  // Nechat otevřít rozbalovací nabídku krajů
   if (e.target.closest(".region-combo__picker")) return;
+
+  if (isFillHandleClick(e, td) && gridRegionAnchor) {
+    e.preventDefault();
+    fillHandleDragging = true;
+    gridRegionDragging = false;
+    return;
+  }
 
   const onInput = e.target.closest(".grid-nav-region");
   if (onInput && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
@@ -890,13 +909,20 @@ function handleRegionCellMouseDown(e) {
 }
 
 function handleRegionCellMouseEnter(e) {
-  if (!gridRegionDragging || !gridRegionAnchor) return;
+  if (!gridRegionAnchor) return;
   const td = e.target.closest("td.month-grid-col-kraj");
   if (!td) return;
   const row = Number(td.dataset.row);
   const col = Number(td.dataset.col);
   const memberIdx = colToMemberIdx(col);
   if (memberIdx == null) return;
+
+  if (fillHandleDragging) {
+    selectRegionRange(gridRegionAnchor.row, gridRegionAnchor.memberIdx, row, gridRegionAnchor.memberIdx);
+    updateGridRegionSelectionUi();
+    return;
+  }
+  if (!gridRegionDragging) return;
   selectRegionRange(gridRegionAnchor.row, gridRegionAnchor.memberIdx, row, memberIdx);
   updateGridRegionSelectionUi();
 }
@@ -908,8 +934,9 @@ function setupGridRegionSelection() {
   body.addEventListener("mousedown", handleRegionCellMouseDown);
   body.addEventListener("mouseover", handleRegionCellMouseEnter);
   document.addEventListener("mouseup", () => {
-    const shouldFill = gridRegionDragging && gridRegionSelection.size > 1 && gridRegionAnchor;
+    const shouldFill = (gridRegionDragging || fillHandleDragging) && gridRegionSelection.size > 1 && gridRegionAnchor;
     gridRegionDragging = false;
+    fillHandleDragging = false;
     if (shouldFill) fillSelectedRegionsFromAnchor();
   });
   document.addEventListener("keydown", (e) => {

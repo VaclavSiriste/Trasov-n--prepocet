@@ -894,6 +894,21 @@ input.ok {
 .table-wrap--grid #monthGridTable td.month-grid-col-kraj {
   cursor: cell;
   user-select: none;
+  position: relative;
+}
+
+.table-wrap--grid #monthGridTable td.month-grid-col-kraj.is-region-anchor::after {
+  content: "";
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 8px;
+  height: 8px;
+  background: #3b82f6;
+  border: 1px solid #fff;
+  cursor: crosshair;
+  z-index: 5;
+  border-radius: 1px;
 }
 
 .table-wrap--grid #monthGridTable .month-grid-col-actual {
